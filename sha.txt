@@ -1,0 +1,25 @@
+Alias name: androiddebugkey
+Creation date: 11-Mar-2025
+Entry type: PrivateKeyEntry
+Certificate chain length: 1
+Certificate[1]:
+Owner: CN=bharath inukurthi, OU=personal, O=personal, L=nellore, ST=andhra pradesh, C=in
+Issuer: CN=bharath inukurthi, OU=personal, O=personal, L=nellore, ST=andhra pradesh, C=in
+Serial number: fab66402f2f6d07b
+Valid from: Tue Mar 11 21:52:46 IST 2025 until: Sat Jul 27 21:52:46 IST 2052
+Certificate fingerprints:
+         SHA1: E2:16:55:C7:70:23:E3:DF:99:BB:68:27:E2:2B:68:CF:12:B7:75:37
+         SHA256: 52:28:6A:AE:59:20:B5:CB:7D:56:A7:07:09:50:46:41:75:95:A5:52:53:9E:E6:27:B1:00:C6:94:21:CE:89:50
+Signature algorithm name: SHA384withRSA
+Subject Public Key Algorithm: 2048-bit RSA key
+Version: 3
+
+Extensions:
+
+#1: ObjectId: 2.5.29.14 Criticality=false
+SubjectKeyIdentifier [
+KeyIdentifier [
+0000: 9C BD B6 9F 16 41 B9 54   FA F7 48 9D 14 07 57 F8  .....A.T..H...W.
+0010: 3C 01 6D 6B                                        <.mk
+]
+]

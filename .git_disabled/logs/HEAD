@@ -1,0 +1,6 @@
+0000000000000000000000000000000000000000 28764363c0fb0b47bd8b9b2d6975a16efca9455d bharath kumar inukurthi <bharathinukurthi1@gmail.com> 1741700007 +0530	commit (initial): Initial commit
+28764363c0fb0b47bd8b9b2d6975a16efca9455d 0000000000000000000000000000000000000000 bharath kumar inukurthi <bharathinukurthi1@gmail.com> 1742648902 +0530	Branch: renamed refs/heads/master to refs/heads/main
+0000000000000000000000000000000000000000 28764363c0fb0b47bd8b9b2d6975a16efca9455d bharath kumar inukurthi <bharathinukurthi1@gmail.com> 1742648902 +0530	Branch: renamed refs/heads/master to refs/heads/main
+28764363c0fb0b47bd8b9b2d6975a16efca9455d 934151f44c32948360e2ac2349da4606a9c0b83b bharath kumar inukurthi <bharathinukurthi1@gmail.com> 1742649175 +0530	commit: firebase auth google sign in
+934151f44c32948360e2ac2349da4606a9c0b83b af9a6f062fa1bd73186a88ca54fe8bb176bb69c7 bharath kumar inukurthi <bharathinukurthi1@gmail.com> 1742836568 +0530	commit: added google sign in and initial forms
+af9a6f062fa1bd73186a88ca54fe8bb176bb69c7 a9b57bbdfee83b76e5b4663dec6e1468ca5fe293 bharath kumar inukurthi <bharathinukurthi1@gmail.com> 1742881932 +0530	commit: fetches profile details from mail

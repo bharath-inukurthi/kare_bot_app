@@ -1,0 +1,54 @@
+{
+    "project_info": {
+      "project_number": "368113711736",
+      "project_id": "faculty-meet",
+      "storage_bucket": "faculty-meet.firebasestorage.app"
+    },
+    "client": [
+      {
+        "client_info": {
+          "mobilesdk_app_id": "1:368113711736:android:1b2a9c800c2e223d678b8d",
+          "android_client_info": {
+            "package_name": "com.kalasalingam.karebot"
+          }
+        },
+        "oauth_client": [
+          {
+            "client_id": "368113711736-n9vnkt8m5kv6ce8nq2nlrr05cr5kirp0.apps.googleusercontent.com",
+            "client_type": 1,
+            "android_info": {
+              "package_name": "com.kalasalingam.karebot",
+              "certificate_hash": "e21655c77023e3df99bb6827e22b68cf12b77537"
+            }
+          },
+          {
+            "client_id": "368113711736-8dicp506f6rk4biti5e009qag1jgvqmk.apps.googleusercontent.com",
+            "client_type": 3
+          }
+        ],
+        "api_key": [
+          {
+            "current_key": "AIzaSyBQqIssej0L8c_I5gCo6feoVDRGmYfHHew"
+          }
+        ],
+        "services": {
+          "appinvite_service": {
+            "other_platform_oauth_client": [
+              {
+                "client_id": "368113711736-8dicp506f6rk4biti5e009qag1jgvqmk.apps.googleusercontent.com",
+                "client_type": 3
+              },
+              {
+                "client_id": "368113711736-vd9kpllf1b3f5oh2qhqa2qh6vko3edta.apps.googleusercontent.com",
+                "client_type": 2,
+                "ios_info": {
+                  "bundle_id": "com.kalasalingam.karebot"
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "configuration_version": "1"
+  }

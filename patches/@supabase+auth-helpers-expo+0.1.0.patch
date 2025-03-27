@@ -1,0 +1,12 @@
+diff --git a/node_modules/@supabase/auth-helpers-expo/package.json b/node_modules/@supabase/auth-helpers-expo/package.json
+index 123456..789012 3
+--- a/node_modules/@supabase/auth-helpers-expo/package.json
++++ b/node_modules/@supabase/auth-helpers-expo/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@supabase/auth-helpers-expo",
+-  "version": "0.1.0",
++  "version": "0.1.1",
+   "description": "Supabase Auth Helpers for Expo",
+   "main": "dist/index.js",
+   "module": "dist/index.mjs",
