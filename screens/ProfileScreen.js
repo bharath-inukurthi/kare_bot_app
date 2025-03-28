@@ -116,7 +116,7 @@ const ProfileScreen = () => {
       'Your feedback helps us improve KARE Bot! Send us your thoughts.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Open Email', onPress: () => Linking.openURL('mailto:bharathinukurthi1@gmail.com') },
+        { text: 'Open Email', onPress: () => Linking.openURL('mailto:bharathinukurthi1@gmail.com')  }
       ]
     );
   };
@@ -140,7 +140,7 @@ const ProfileScreen = () => {
     {
       id: '3',
       title: 'Hostel Portal',
-      description: 'Access your hostel portal for leaves and permissions',
+      description: 'Access your hostel portal Permissions and Leaves',
       icon: '🏫',
       action: () => Linking.openURL('https://hostels.kalasalingam.ac.in/')
     },
@@ -177,56 +177,58 @@ const ProfileScreen = () => {
           transparent={true}
           visible={isEditing}
           onRequestClose={() => setIsEditing(false)}
-          statusBarTranslucent={true}
         >
           <Pressable 
-            style={styles.modalOverlay}
-            onPress={() => setIsEditing(false)}
-          >
-            <View style={[styles.modalContainer, styles.academicInfoContainer]}>
-              <Text style={styles.modalTitle}>Edit Academic Details</Text>
-              <View style={styles.editContainer}>
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Section</Text>
-                  <TouchableOpacity
-                    style={[styles.dropdownButton, section && styles.dropdownButtonSelected]}
-                    onPress={() => setShowSectionModal(true)}
-                  >
-                    <Text style={[styles.dropdownButtonText, !section && styles.placeholderText]}>
-                      {section || 'Select your section'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                style={styles.modalOverlay}
+                onPress={() => setIsEditing(false)}
+              >
+                <View style={styles.modalContainer}>
+                  <Text style={styles.modalTitle}>Edit Academic Details</Text>
+                  
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.label}>Section</Text>
+                    <TouchableOpacity
+                      style={[styles.dropdownButton, section && styles.dropdownButtonSelected]}
+                      onPress={() => setShowSectionModal(true)}
+                    >
+                      <Text style={[styles.dropdownButtonText, !section && styles.placeholderText]}>
+                        {section || 'Select your section'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
 
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Year of Study</Text>
-                  <TouchableOpacity
-                    style={[styles.dropdownButton, year && styles.dropdownButtonSelected]}
-                    onPress={() => setShowYearModal(true)}
-                  >
-                    <Text style={[styles.dropdownButtonText, !year && styles.placeholderText]}>
-                      {year || 'Select your year'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.label}>Year of Study</Text>
+                    <TouchableOpacity
+                      style={[styles.dropdownButton, year && styles.dropdownButtonSelected]}
+                      onPress={() => setShowYearModal(true)}
+                    >
+                      <Text style={[styles.dropdownButtonText, !year && styles.placeholderText]}>
+                        {year || 'Select your year'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
 
-                <View style={styles.buttonContainer}>
-                  <TouchableOpacity 
-                    style={[styles.button, styles.cancelButton]}
-                    onPress={() => setIsEditing(false)}
-                  >
-                    <Text style={[styles.buttonText, { color: "#00010a" }]}>Cancel</Text>
-                  </TouchableOpacity>
-                 
-                  <TouchableOpacity 
-                    style={[styles.button, styles.saveButton]}
-                    onPress={handleSaveDetails}
-                  >
-                    <Text style={styles.buttonText}>Save</Text>
-                  </TouchableOpacity>
-                </View>
+                  <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton, { backgroundColor: COLORS.divider,marginHorizontal:10}]}
+                  onPress={() => setIsEditing(false)}
+                >
+                  <Text style={[styles.buttonText,{color:'#000000'}]}>Cancel</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.saveButton]}
+                  onPress={() => {
+                    // Handle save logic
+                    setIsEditing(false);
+                  }}
+                >
+                  <Text style={styles.buttonText}>Save</Text>
+                </TouchableOpacity>
               </View>
             </View>
+        
           </Pressable>
         </Modal>
       )}
@@ -255,70 +257,7 @@ const ProfileScreen = () => {
         </View>
 
         <>
-          <Modal
-            visible={showSectionModal}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setShowSectionModal(false)}
-          >
-            <Pressable 
-              style={styles.modalOverlay}
-              onPress={() => setShowSectionModal(false)}
-            >
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Select Section</Text>
-                <ScrollView style={styles.optionsList}>
-                  {SECTION_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[styles.optionItem, section === option && styles.selectedOption]}
-                      onPress={() => {
-                        setSection(option);
-                        setShowSectionModal(false);
-                      }}
-                    >
-                      <Text style={[styles.optionText, section === option && styles.selectedOptionText]}>
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            </Pressable>
-          </Modal>
           
-          <Modal
-            visible={showYearModal}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setShowYearModal(false)}
-          >
-            <Pressable 
-              style={styles.modalOverlay}
-              onPress={() => setShowYearModal(false)}
-            >
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Select Year</Text>
-                <ScrollView style={styles.optionsList}>
-                  {YEAR_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[styles.optionItem, year === option && styles.selectedOption]}
-                      onPress={() => {
-                        setYear(option);
-                        setShowYearModal(false);
-                      }}
-                    >
-                      <Text style={[styles.optionText, year === option && styles.selectedOptionText]}>
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            </Pressable>
-          </Modal>
-           
     
         
         <View style={styles.section}>
@@ -369,159 +308,6 @@ const ProfileScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  header: {
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.divider,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: COLORS.secondary,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    backgroundColor: COLORS.secondary,
-    borderRadius: 12,
-    padding: 20,
-    width: '90%',
-    maxHeight: '80%',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  editContainer: {
-    width: '100%',
-  },
-  inputContainer: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 16,
-    color: COLORS.text,
-    marginBottom: 8,
-  },
-  dropdownButton: {
-    borderWidth: 1,
-    borderColor: COLORS.divider,
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: COLORS.background,
-  },
-  dropdownButtonSelected: {
-    borderColor: COLORS.primary,
-  },
-  dropdownButtonText: {
-    fontSize: 16,
-    color: COLORS.text,
-  },
-  placeholderText: {
-    color: COLORS.textSecondary,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  button: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    marginHorizontal: 8,
-  },
-  cancelButton: {
-    backgroundColor: COLORS.background,
-  },
-  saveButton: {
-    backgroundColor: COLORS.primary,
-  },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: '500',
-    textAlign: 'center',
-    color: COLORS.text,
-  },
-  optionsList: {
-    maxHeight: 300,
-  },
-  optionItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.divider,
-  },
-  selectedOption: {
-    backgroundColor: COLORS.primaryLight,
-  },
-  optionText: {
-    fontSize: 16,
-    color: COLORS.text,
-  },
-  selectedOptionText: {
-    color: COLORS.secondary,
-    fontWeight: '500',
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    padding: 20,
-    backgroundColor: COLORS.secondary,
-    borderRadius: 12,
-    margin: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  profileImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginRight: 16,
-  },
-  profileInfo: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  profileName: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 4,
-  },
-  profileEmail: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginBottom: 4,
-  },
-  profileRole: {
-    fontSize: 14,
-    color: COLORS.primary,
-    marginBottom: 8,
-  },
-  academicInfo: {
-    backgroundColor: COLORS.background,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-  },
-  academicInfoText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -838,7 +624,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.divider
   },
   cancelButtonText: {
-    color: COLORS.textSecondary,
+    color: COLORS.text,
     fontSize: 16,
     fontWeight: '500',
     textAlign: 'center'
@@ -1083,7 +869,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.divider
   },
   cancelButtonText: {
-    color: COLORS.textSecondary,
+    color: COLORS.text,
     fontSize: 16,
     fontWeight: '500',
     textAlign: 'center'
