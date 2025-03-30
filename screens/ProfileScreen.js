@@ -16,7 +16,7 @@ import { getAuth, signOut } from 'firebase/auth';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
-
+import { fetchAndCacheTimeTable } from './UserDetailsScreen.js';
 // Define the color scheme consistent with the app
 const COLORS = {
   primary: '#1e40af', // Richer blue
@@ -33,17 +33,18 @@ const COLORS = {
 
 const ProfileScreen = () => {
   const [user, setUser] = React.useState(null);
-  
-  // Remove residual modal state variables
   const [isEditing, setIsEditing] = React.useState(false);
   const [showSectionModal, setShowSectionModal] = React.useState(false);
   const [showYearModal, setShowYearModal] = React.useState(false);
+  const [showSemesterModal, setShowSemesterModal] = React.useState(false);
   const [section, setSection] = React.useState('');
   const [year, setYear] = React.useState('');
+  const [semester, setSemester] = React.useState('');
 
   // Generate section options from S01 to S30
   const SECTION_OPTIONS = Array.from({length: 30}, (_, i) => `S${String(i + 1).padStart(2, '0')}`);
   const YEAR_OPTIONS = ['II', 'III'];
+  const SEMESTER_OPTIONS = ['Odd', 'Even'];
 
   React.useEffect(() => {
     loadUserData();
@@ -69,6 +70,7 @@ const ProfileScreen = () => {
           const details = JSON.parse(savedDetails);
           setSection(details.section);
           setYear(details.year);
+          setSemester(details.semester);
         }
       }
     } catch (error) {
@@ -78,17 +80,20 @@ const ProfileScreen = () => {
 
   const handleSaveDetails = async () => {
     try {
-      if (!section.trim() || !year.trim()) {
-        Alert.alert('Required Fields', 'Please fill in both section and year');
+      if (!section.trim() || !year.trim() || !semester.trim()) {
+        Alert.alert('Required Fields', 'Please fill in all fields');
         return;
       }
 
       const userDetails = {
         section: section.trim(),
         year: year.trim(),
+        semester: semester.trim(),
       };
 
       await AsyncStorage.setItem('userDetails', JSON.stringify(userDetails));
+      // Fetch and cache timetable after updating details
+      await fetchAndCacheTimeTable(year, section, semester);
       setIsEditing(false);
       Alert.alert('Success', 'Profile details updated successfully');
     } catch (error) {
@@ -170,21 +175,23 @@ const ProfileScreen = () => {
       >
         <Text style={styles.headerTitle}>My Profile</Text>
       </LinearGradient>
-
+      
       {isEditing && (
-        <Modal
-          animationType="slide"
-          transparent={true}
-          visible={isEditing}
-          onRequestClose={() => setIsEditing(false)}
-        >
-          <Pressable 
-                style={styles.modalOverlay}
-                onPress={() => setIsEditing(false)}
-              >
-                <View style={styles.modalContainer}>
-                  <Text style={styles.modalTitle}>Edit Academic Details</Text>
-                  
+        <>
+          <Modal
+            animationType="slide"
+            transparent={true}
+            visible={isEditing}
+            onRequestClose={() => setIsEditing(false)}
+          >
+            <Pressable 
+              style={styles.modalOverlay}
+              onPress={() => setIsEditing(false)}
+            >
+              <View style={styles.modalContainer}>
+                <Text style={styles.modalTitle}>Edit Academic Details</Text>
+                
+                <View style={styles.editContainer}>
                   <View style={styles.inputContainer}>
                     <Text style={styles.label}>Section</Text>
                     <TouchableOpacity
@@ -198,7 +205,7 @@ const ProfileScreen = () => {
                   </View>
 
                   <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Year of Study</Text>
+                    <Text style={styles.label}>Year</Text>
                     <TouchableOpacity
                       style={[styles.dropdownButton, year && styles.dropdownButtonSelected]}
                       onPress={() => setShowYearModal(true)}
@@ -209,28 +216,133 @@ const ProfileScreen = () => {
                     </TouchableOpacity>
                   </View>
 
-                  <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelButton, { backgroundColor: COLORS.divider,marginHorizontal:10}]}
-                  onPress={() => setIsEditing(false)}
-                >
-                  <Text style={[styles.buttonText,{color:'#000000'}]}>Cancel</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.saveButton]}
-                  onPress={() => {
-                    // Handle save logic
-                    setIsEditing(false);
-                  }}
-                >
-                  <Text style={styles.buttonText}>Save</Text>
-                </TouchableOpacity>
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.label}>Semester</Text>
+                    <TouchableOpacity
+                      style={[styles.dropdownButton, semester && styles.dropdownButtonSelected]}
+                      onPress={() => setShowSemesterModal(true)}
+                    >
+                      <Text style={[styles.dropdownButtonText, !semester && styles.placeholderText]}>
+                        {semester || 'Select your semester'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.buttonContainer}>
+                    <TouchableOpacity 
+                      style={styles.cancelButton}
+                      onPress={() => setIsEditing(false)}
+                    >
+                      <Text style={styles.cancelButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.saveButton}
+                      onPress={handleSaveDetails}
+                    >
+                      <Text style={styles.saveButtonText}>Save</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
-            </View>
-        
-          </Pressable>
-        </Modal>
+            </Pressable>
+          </Modal>
+
+          <Modal
+            visible={showSectionModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowSectionModal(false)}
+          >
+            <Pressable 
+              style={styles.modalOverlay}
+              onPress={() => setShowSectionModal(false)}
+            >
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Select Section</Text>
+                <ScrollView style={styles.optionsList}>
+                  {SECTION_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.optionItem, section === option && styles.selectedOption]}
+                      onPress={() => {
+                        setSection(option);
+                        setShowSectionModal(false);
+                      }}
+                    >
+                      <Text style={[styles.optionText, section === option && styles.selectedOptionText]}>
+                        {option}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </Pressable>
+          </Modal>
+
+          <Modal
+            visible={showSemesterModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowSemesterModal(false)}
+          >
+            <Pressable 
+              style={styles.modalOverlay}
+              onPress={() => setShowSemesterModal(false)}
+            >
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Select Semester</Text>
+                <ScrollView style={styles.optionsList}>
+                  {SEMESTER_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.optionItem, semester === option && styles.selectedOption]}
+                      onPress={() => {
+                        setSemester(option);
+                        setShowSemesterModal(false);
+                      }}
+                    >
+                      <Text style={[styles.optionText, semester === option && styles.selectedOptionText]}>
+                        {option}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </Pressable>
+          </Modal>
+
+          <Modal
+            visible={showYearModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowYearModal(false)}
+          >
+            <Pressable 
+              style={styles.modalOverlay}
+              onPress={() => setShowYearModal(false)}
+            >
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Select Year</Text>
+                <ScrollView style={styles.optionsList}>
+                  {YEAR_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.optionItem, year === option && styles.selectedOption]}
+                      onPress={() => {
+                        setYear(option);
+                        setShowYearModal(false);
+                      }}
+                    >
+                      <Text style={[styles.optionText, year === option && styles.selectedOptionText]}>
+                        {option}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </Pressable>
+          </Modal>
+        </>
       )}
       
       <ScrollView 
@@ -248,18 +360,14 @@ const ProfileScreen = () => {
             <Text style={styles.profileName}>{user?.displayName || 'KLU Student'}</Text>
             <Text style={styles.profileEmail}>{user?.email}</Text>
             <Text style={styles.profileRole}>{user?.providerId === 'google.com' ? 'Google User' : 'Student'}</Text>
-            {section && year && (
+            {section && year && semester && (
               <View style={styles.academicInfo}>
-                <Text style={styles.academicInfoText}>Section {section} • Year {year}</Text>
+                <Text style={styles.academicInfoText}>Section {section} • Year {year} • {semester} Semester</Text>
               </View>
             )}
           </View>
         </View>
 
-        <>
-          
-    
-        
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>University Options</Text>
           {profileOptions.map(option => (
@@ -301,75 +409,62 @@ const ProfileScreen = () => {
         >
           <Text style={styles.signOutButtonText}>Sign Out</Text>
         </TouchableOpacity>
-      </>
       </ScrollView>
-      </SafeAreaView>
+    </SafeAreaView>
   );
+
 };
 
 const styles = StyleSheet.create({
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    backgroundColor: COLORS.secondary,
-    borderRadius: 12,
-    padding: 20,
-    width: '85%',
-    minHeight: 200,
-    maxWidth: 400,
-    zIndex: 1000,
-    elevation: 5,
-    overflow: 'hidden',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 16,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  modalButton: {
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    minWidth: 100,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: COLORS.divider,
-  },
-  saveButton: {
-    backgroundColor: COLORS.primary,
-  },
-  buttonText: {
-    color: COLORS.secondary,
-    fontWeight: '500',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: COLORS.divider,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    backgroundColor: COLORS.secondary,
-  },
-  modalContent: {
-    backgroundColor: COLORS.secondary,
-    padding: 20,
-    borderRadius: 10,
-    width: '80%',
-  },
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  modalContainer: {
+    backgroundColor: COLORS.secondary,
+    borderRadius: 16,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+    alignSelf: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 24,
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveButtonText: {
+    color: COLORS.secondary,
+    fontSize: 16,
+    fontWeight: '600',
   },
   header: {
     paddingVertical: 16,
@@ -392,7 +487,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     margin: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2, },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
@@ -479,40 +574,70 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 999,
-  },
-  modalContainer: {
-    backgroundColor: COLORS.secondary,
-    borderRadius: 12,
     padding: 20,
-    width: '85%',
-    minHeight: 200,
+  },
+  modalContent: {
+    backgroundColor: COLORS.secondary,
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
     maxWidth: 400,
-    zIndex: 1000,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
     elevation: 5,
-    overflow: 'hidden',
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginBottom: 20,
+    marginBottom: 16,
     textAlign: 'center',
   },
-  formContainer: {
+  optionsList: {
+    maxHeight: 300,
+  },
+  selectedOption: {
+    backgroundColor: COLORS.background,
+  },
+  optionText: {
+    fontSize: 16,
+    color: COLORS.text,
+  },
+  selectedOptionText: {
+    color: COLORS.primary,
+    fontWeight: '500',
+  },
+  signOutButton: {
+    backgroundColor: COLORS.error,
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 24,
+  },
+  signOutButtonText: {
+    color: COLORS.secondary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  editContainer: {
     width: '100%',
+    gap: 16,
   },
   inputContainer: {
+    width: '100%',
     marginBottom: 16,
   },
   label: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '500',
     color: COLORS.text,
     marginBottom: 8,
@@ -533,360 +658,8 @@ const styles = StyleSheet.create({
   },
   placeholderText: {
     color: COLORS.textSecondary,
-  },
-  optionsList: {
-    maxHeight: 300,
-  },
-  optionItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.divider,
-  },
-  selectedOption: {
-    backgroundColor: COLORS.background,
-  },
-  optionText: {
-    fontSize: 16,
-    color: COLORS.text,
-  },
-  selectedOptionText: {
-    color: COLORS.primary,
-    fontWeight: '500',
-  },
-  submitButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  submitButtonText: {
-    color: COLORS.secondary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  signOutButton: {
-    backgroundColor: COLORS.error,
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginTop: 24,
-  },
-  signOutButtonText: {
-    color: COLORS.secondary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  editContainer: {
-    width: '100%',
-    gap: 16
-  },
-  inputContainer: {
-    width: '100%'
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: COLORS.text,
-    marginBottom: 8
-  },
-  dropdownButton: {
-    backgroundColor: COLORS.background,
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: COLORS.divider
-  },
-  dropdownButtonSelected: {
-    borderColor: COLORS.primary
-  },
-  dropdownButtonText: {
-    fontSize: 16,
-    color: COLORS.text
-  },
-  placeholderText: {
-    color: COLORS.textSecondary
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.divider
-  },
-  cancelButtonText: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: '500',
-    textAlign: 'center'
-  },
-  saveButton: {
-    flex: 1,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8
-  },
-  saveButtonText: {
-    color: COLORS.secondary,
-    fontSize: 16,
-    fontWeight: '500',
-    textAlign: 'center'
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20
-  },
-  modalContent: {
-    backgroundColor: COLORS.secondary,
-    borderRadius: 16,
-    padding: 20,
-    width: '100%',
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: 16,
-    textAlign: 'center'
-  },
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background
-  },
-  header: {
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    alignItems: 'center'
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.secondary
-  },
-  scrollContent: {
-    paddingBottom: 120
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: COLORS.secondary,
-    borderRadius: 12,
-    margin: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2, },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3
-  },
-  profileImage: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    marginRight: 15
-  },
-  profileInfo: {
-    flex: 1
-  },
-  profileName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: 4
-  },
-  profileEmail: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginBottom: 4
-  },
-  profileRole: {
-    fontSize: 14,
-    color: COLORS.primaryLight,
-    marginBottom: 8
-  },
-  academicInfo: {
-    backgroundColor: COLORS.primaryLight,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-    alignSelf: 'flex-start'
-  },
-  academicInfoText: {
-    color: COLORS.secondary,
-    fontSize: 12,
-    fontWeight: '500'
-  },
-  section: {
-    marginHorizontal: 16,
-    marginBottom: 24
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 16
-  },
-  optionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.secondary,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12
-  },
-  optionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12
-  },
-  optionIconText: {
-    fontSize: 20
-  },
-  optionInfo: {
-    flex: 1
-  },
-  optionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 4
-  },
-  optionDescription: {
-    fontSize: 14,
-    color: COLORS.textSecondary
-  },
-  signOutButton: {
-    backgroundColor: COLORS.error,
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginTop: 24
-  },
-  signOutButtonText: {
-    color: COLORS.secondary,
-    fontSize: 16,
-    fontWeight: '600'
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20
-  },
-  modalContent: {
-    backgroundColor: COLORS.secondary,
-    borderRadius: 16,
-    padding: 20,
-    width: '100%',
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: 16,
-    textAlign: 'center'
-  },
-  editContainer: {
-    width: '100%',
-    gap: 16
-  },
-  inputContainer: {
-    width: '100%'
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: COLORS.text,
-    marginBottom: 8
-  },
-  dropdownButton: {
-    backgroundColor: COLORS.background,
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: COLORS.divider
-  },
-  dropdownButtonSelected: {
-    borderColor: COLORS.primary
-  },
-  dropdownButtonText: {
-    fontSize: 16,
-    color: COLORS.text
-  },
-  placeholderText: {
-    color: COLORS.textSecondary
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.divider
-  },
-  cancelButtonText: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: '500',
-    textAlign: 'center'
-  },
-  saveButton: {
-    flex: 1,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8
-  },
-  saveButtonText: {
-    color: COLORS.secondary,
-    fontSize: 16,
-    fontWeight: '500',
-    textAlign: 'center'
-  },
+  }
 });
 
 export default ProfileScreen;
+ 

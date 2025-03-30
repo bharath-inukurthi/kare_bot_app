@@ -12,6 +12,9 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
+import * as Print from 'expo-print';
+import { manipulateAsync } from 'expo-image-manipulator';
 
 // Define the color scheme consistent with the app
 const COLORS = {
@@ -27,14 +30,16 @@ const COLORS = {
 };
 
 // Generate section options from S01 to S30
-const SECTION_OPTIONS = Array.from({length: 30}, (_, i) => `S${String(i + 1).padStart(2, '0')}`);
+const SECTION_OPTIONS = Array.from({length: 30}, (_, i) => `S${String(i + 1).padStart(2, '0')}`);const SEMESTER_OPTIONS = ['Odd', 'Even'];
 const YEAR_OPTIONS = ['II', 'III'];
 
 const UserDetailsScreen = ({ navigation, onComplete }) => {
   const [section, setSection] = useState('');
   const [year, setYear] = useState('');
+  const [semester, setSemester] = useState('');
   const [showSectionModal, setShowSectionModal] = useState(false);
   const [showYearModal, setShowYearModal] = useState(false);
+  const [showSemesterModal, setShowSemesterModal] = useState(false);
 
   React.useEffect(() => {
     loadUserDetails();
@@ -47,25 +52,93 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
         const details = JSON.parse(savedDetails);
         setSection(details.section);
         setYear(details.year);
+        setSemester(details.semester);
       }
     } catch (error) {
       console.error('Error loading user details:', error);
     }
   };
 
+  const processAndCacheImage = async (imageUrl, storageKey) => {
+    try {
+        // Download image to cache
+        const cacheFilePath = `${FileSystem.cacheDirectory}${storageKey}_${Date.now()}.jpg`;
+        await FileSystem.downloadAsync(imageUrl, cacheFilePath);
+
+        // Process the image with optimal quality settings
+        const manipulateResult = await manipulateAsync(
+            cacheFilePath,
+            [{
+                resize: {
+                    width: 1200, // Reasonable size for mobile display
+                    mode: 'contain'
+                }
+            }],
+            {
+                format: 'jpeg',
+                compress: 0.8 // Good balance between quality and size
+            }
+        );
+
+        // Clean up the temporary downloaded file
+        await FileSystem.deleteAsync(cacheFilePath, { idempotent: true });
+
+        return manipulateResult.uri;
+    } catch (error) {
+        console.error('Error processing image:', error);
+        throw new Error(`Image processing failed: ${error.message}`);
+    }
+};
+
+const fetchAndCacheTimeTable = async (yearValue, sectionValue, semesterValue) => {
+    try {
+        const sectionNumber = sectionValue.substring(1);
+
+        // Timetable file key
+        const timetableKey = `Time-Tables/${yearValue}-year-S${sectionNumber}.jpg`;
+        const timetableApiUrl = `https://faculty-availability-api.onrender.com/get-item/?object_key=${timetableKey}`;
+        
+        // Calendar file key
+        const calendarKey = `Calenders/${semesterValue}-Semester.jpg`;
+        const calendarApiUrl = `https://faculty-availability-api.onrender.com/get-item/?object_key=${calendarKey}`;
+
+        for (const [apiUrl, storageKey] of [
+            [timetableApiUrl, 'timeTableUri'],
+            [calendarApiUrl, 'calendarUri']
+        ]) {
+            console.log('Fetching:', apiUrl);
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+            
+            if (data.presigned_url) {
+                // Process and cache the image
+                const processedImageUri = await processAndCacheImage(data.presigned_url, storageKey);
+                
+                // Save the processed image URI to AsyncStorage
+                await AsyncStorage.setItem(storageKey, processedImageUri);
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching timetable or calendar:', error);
+    }
+};
+
   const saveUserDetails = async () => {
     try {
-      if (!section.trim() || !year.trim()) {
-        Alert.alert('Required Fields', 'Please fill in both section and year');
+      if (!section.trim() || !year.trim() || !semester.trim()) {
+        Alert.alert('Required Fields', 'Please fill in all fields');
         return;
       }
 
       const userDetails = {
         section: section.trim(),
         year: year.trim(),
+        semester: semester.trim(),
       };
 
       await AsyncStorage.setItem('userDetails', JSON.stringify(userDetails));
+      await fetchAndCacheTimeTable(year, section,semester);
+      
       if (onComplete) {
         onComplete();
       } else if (navigation) {
@@ -113,6 +186,18 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
             >
               <Text style={[styles.dropdownButtonText, !year && styles.placeholderText]}>
                 {year || 'Select your year'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Semester</Text>
+            <TouchableOpacity
+              style={[styles.dropdownButton, semester && styles.dropdownButtonSelected]}
+              onPress={() => setShowSemesterModal(true)}
+            >
+              <Text style={[styles.dropdownButtonText, !semester && styles.placeholderText]}>
+                {semester || 'Select your semester'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -172,6 +257,38 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
                       }}
                     >
                       <Text style={[styles.optionText, year === option && styles.selectedOptionText]}>
+                        {option}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </Pressable>
+          </Modal>
+
+          <Modal
+            visible={showSemesterModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowSemesterModal(false)}
+          >
+            <Pressable 
+              style={styles.modalOverlay}
+              onPress={() => setShowSemesterModal(false)}
+            >
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Select Semester</Text>
+                <ScrollView style={styles.optionsList}>
+                  {SEMESTER_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.optionItem, semester === option && styles.selectedOption]}
+                      onPress={() => {
+                        setSemester(option);
+                        setShowSemesterModal(false);
+                      }}
+                    >
+                      <Text style={[styles.optionText, semester === option && styles.selectedOptionText]}>
                         {option}
                       </Text>
                     </TouchableOpacity>

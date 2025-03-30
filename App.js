@@ -39,6 +39,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // Import screens
 import FacultyAvailabilityScreen from './screens/FacultyAvailabilityScreen';
@@ -46,6 +47,7 @@ import ChatBotScreen from './screens/ChatBotScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import FormsScreen from './screens/FormsScreen';
 import UserDetailsScreen from './screens/UserDetailsScreen';
+import PreviewScreen from './screens/PreviewScreen';
 
 // Prevents multiple web popup instances
 WebBrowser.maybeCompleteAuthSession();
@@ -93,23 +95,37 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [image, setImage] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [initializing, setInitializing] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLogin, setIsLogin] = useState(true);
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <NavigationContainer>
+        <TabNavigator user={user} />
+      </NavigationContainer>
+    </GestureHandlerRootView>
+  );
+}
+
+const TabNavigator = ({ user }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [debugMode, setDebugMode] = useState(__DEV__); // Enable debug in development
   const [hasUserDetails, setHasUserDetails] = useState(false);
   const [checkingDetails, setCheckingDetails] = useState(true);
+  const [showUserDetails, setShowUserDetails] = useState(false);
+  const [initializing, setInitializing] = useState(true);
 
-  // Bottom Tab Navigator Configuration
-  const TabNavigator = () => (
+  // Return the Tab Navigator directly
+  return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
 
-          if (route.name === 'Chat') {
+          if (route.name === 'Schedules') {
+            iconName = focused ? 'calendar' : 'calendar-outline';
+          } else if (route.name === 'Chat') {
             iconName = focused ? 'chatbubble' : 'chatbubble-outline';
           } else if (route.name === 'Availability') {
             iconName = focused ? 'people' : 'people-outline';
@@ -126,13 +142,43 @@ export default function App() {
         tabBarStyle: {
           paddingBottom: Platform.OS === 'ios' ? 20 : 0,
           height: Platform.OS === 'ios' ? 90 : 60,
+          backgroundColor: COLORS.secondary,
+          borderTopColor: 'rgba(0, 0, 0, 0.1)',
+          display: 'flex',
         },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '500',
+        },
+        headerShown: false,
       })}
     >
-      <Tab.Screen name="Chat" component={ChatBotScreen} />
-      <Tab.Screen name="Availability" component={FacultyAvailabilityScreen} />
-      <Tab.Screen name="Forms" component={FormsScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen 
+        name="Schedules" 
+        component={PreviewScreen}
+        initialParams={{ user: user }}
+      />
+      
+      <Tab.Screen 
+        name="Availability" 
+        component={FacultyAvailabilityScreen}
+        initialParams={{ user: user }}
+      />
+      <Tab.Screen 
+        name="Chat" 
+        component={ChatBotScreen}
+        initialParams={{ user: user }}
+      />
+      <Tab.Screen 
+        name="Forms" 
+        component={FormsScreen}
+        initialParams={{ user: user }}
+      />
+      <Tab.Screen 
+        name="Profile" 
+        component={ProfileScreen}
+        initialParams={{ user: user }}
+      />
     </Tab.Navigator>
   );
 
@@ -150,9 +196,8 @@ export default function App() {
     }
   };
 
+  // Initialize Google Auth Request hook at the top level
   const [request, response, promptAsync] = Google.useAuthRequest({
-    // REPLACE THESE CLIENT IDs with your new ones from Google Cloud Console
-    // The current ones have been deleted (showing error 402)
     clientId: '368113711736-vd9kpllf1b3f5oh2qhqa2qh6vko3edta.apps.googleusercontent.com',
     androidClientId: '368113711736-n9vnkt8m5kv6ce8nq2nlrr05cr5kirp0.apps.googleusercontent.com',
     iosClientId: '368113711736-8dicp506f6rk4biti5e009qag1jgvqmk.apps.googleusercontent.com',
@@ -172,17 +217,15 @@ export default function App() {
     const auth = getAuth();
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
-      if (initializing) setInitializing(false);
+      setInitializing(false);
       setCheckingDetails(false); // Reset checking details state
     });
 
     // Set a timeout to prevent infinite loading
     const timeout = setTimeout(() => {
-      if (initializing) {
-        setInitializing(false);
-        setCheckingDetails(false);
-        console.log('Auth initialization timed out');
-      }
+      setInitializing(false);
+      setCheckingDetails(false);
+      console.log('Auth initialization timed out');
     }, 10000); // 10 second timeout
 
     // Cleanup subscription and timeout
@@ -190,10 +233,13 @@ export default function App() {
       unsubscribe();
       clearTimeout(timeout);
     };
-  }, [initializing]);
+  }, []);
 
+  // Effect for handling Google authentication response
   useEffect(() => {
-    if (response?.type === 'success') {
+    if (!response) return; // Early return if no response
+
+    if (response.type === 'success') {
       console.log('Authentication successful, processing token...');
       
       // Validate id_token is present
@@ -383,17 +429,47 @@ export default function App() {
     }
   };
 
-  if (initializing) {
-    return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading Kare Bot...</Text>
-      </View>
-    );
+  // Effect for checking user details
+  useEffect(() => {
+    const checkUserDetails = async () => {
+      if (!user) return;
+      try {
+        const savedDetails = await AsyncStorage.getItem('userDetails');
+        setShowUserDetails(!savedDetails);
+      } catch (error) {
+        console.error('Error checking user details:', error);
+        setShowUserDetails(true);
+      }
+    };
+    checkUserDetails();
+  }, [user]);
+
+  // Effect for handling auth state changes
+  useEffect(() => {
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+      if (initializing) setInitializing(false);
+      setCheckingDetails(false);
+    });
+
+    const timeout = setTimeout(() => {
+      if (initializing) {
+        setInitializing(false);
+        setCheckingDetails(false);
+        console.log('Auth initialization timed out');
+      }
+    }, 10000);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(timeout);
+    };
+  }, [initializing]);
+
+  if (user && showUserDetails) {
+    return <UserDetailsScreen onComplete={() => setShowUserDetails(false)} />;
   }
-
-  // If the user is not authenticated, show the login screen
-
 
   if (!user) {
     return (
@@ -538,6 +614,16 @@ export default function App() {
 
 
 
+  // Render loading state or appropriate screen based on conditions
+  if (initializing) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading Kare Bot...</Text>
+      </View>
+    );
+  }
+
   if (checkingDetails) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
@@ -547,9 +633,11 @@ export default function App() {
     );
   }
 
-  // If user is authenticated but hasn't set details, show UserDetailsScreen
-  if (user && !hasUserDetails) {
-    return <UserDetailsScreen onComplete={() => setHasUserDetails(true)} />;
+  if (user && (showUserDetails || !hasUserDetails)) {
+    return <UserDetailsScreen onComplete={() => {
+      setShowUserDetails(false);
+      setHasUserDetails(true);
+    }} />;
   }
 
   // User is authenticated and has details, show the tab navigator
@@ -560,16 +648,17 @@ export default function App() {
           tabBarIcon: ({ focused, color, size }) => {
             let iconName;
 
-            if (route.name === 'Availability') {
-              iconName = focused ? 'people' : 'people-outline';
+            if (route.name === 'Schedules') {
+              iconName = focused ? 'calendar' : 'calendar-outline';
             } else if (route.name === 'Chat') {
-              iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
-            } else if (route.name === 'Profile') {
-              iconName = focused ? 'person' : 'person-outline';
+              iconName = focused ? 'chatbubble' : 'chatbubble-outline';
+            } else if (route.name === 'Availability') {
+              iconName = focused ? 'people' : 'people-outline';
             } else if (route.name === 'Forms') {
               iconName = focused ? 'document-text' : 'document-text-outline';
+            } else if (route.name === 'Profile') {
+              iconName = focused ? 'person' : 'person-outline';
             }
-
             // You can use any component here - we're using Ionicons
             return <Ionicons name={iconName} size={size} color={color} />;
           },
@@ -594,10 +683,11 @@ export default function App() {
           keyboardHidesTabBar: true,
         })}
       >
-        <Tab.Screen name="Availability" component={FacultyAvailabilityScreen} />
-        <Tab.Screen name="Chat" component={ChatBotScreen} />
-        <Tab.Screen name="Forms" component={FormsScreen} />
-        <Tab.Screen name="Profile" component={ProfileScreen} />
+       <Tab.Screen name="Schedules" component={PreviewScreen} />
+       <Tab.Screen name="Availability" component={FacultyAvailabilityScreen} />
+      <Tab.Screen name="Chat" component={ChatBotScreen} />
+      <Tab.Screen name="Forms" component={FormsScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
       </Tab.Navigator>
     </NavigationContainer>
   );
