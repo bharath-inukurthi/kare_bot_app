@@ -3,7 +3,9 @@ import { View, Modal, TouchableOpacity, StyleSheet, Text, SafeAreaView, Platform
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useFocusEffect } from '@react-navigation/native';
+import ImageViewer from 'react-native-image-zoom-viewer';
 
 const COLORS = {
   primary: '#1e40af',
@@ -21,31 +23,50 @@ const PreviewScreen = () => {
   const [isModalVisible, setModalVisible] = useState(false);
   const [timetableUri, setTimetableUri] = useState(null);
   const [calendarUri, setCalendarUri] = useState(null);
-  const [modalImageUri, setModalImageUri] = useState(null);
-  
-  // State for image transformations
-  const [scale, setScale] = useState(1);
-  const [translateX, setTranslateX] = useState(0);
-  const [translateY, setTranslateY] = useState(0);
-  const [savedScale, setSavedScale] = useState(1);
+  const [images, setImages] = useState([]);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  useEffect(() => {
-    loadImages();
-  }, []);
+  useFocusEffect(
+    React.useCallback(() => {
+      loadImages();
+    }, [])
+  );
 
   const loadImages = async () => {
     try {
-      const timetable = await AsyncStorage.getItem('timeTableUri');
-      const calendar = await AsyncStorage.getItem('calendarUri');
+      console.log('Starting to load cached images');
+      const [timetable, calendar] = await Promise.all([
+        AsyncStorage.getItem('timeTableUri'),
+        AsyncStorage.getItem('calendarUri')
+      ]);
+
+      console.log('Cache status:', {
+        hasTimetable: !!timetable,
+        hasCalendar: !!calendar
+      });
 
       if (timetable) {
+        console.log('Setting timetable URI:', timetable.substring(0, 50) + '...');
         setTimetableUri(timetable);
+      } else {
+        console.warn('No timetable found in cache');
       }
+
       if (calendar) {
+        console.log('Setting calendar URI:', calendar.substring(0, 50) + '...');
         setCalendarUri(calendar);
+      } else {
+        console.warn('No calendar found in cache');
       }
     } catch (error) {
-      console.error('Error loading PDFs:', error);
+      console.error('Error loading cached images:', {
+        message: error.message,
+        stack: error.stack
+      });
+      Alert.alert(
+        'Error',
+        'Failed to load schedules. Please try updating your details in the Profile screen.'
+      );
     }
   };
 
@@ -53,80 +74,22 @@ const PreviewScreen = () => {
     return uri && uri.toLowerCase().endsWith('.pdf');
   };
 
-  const toggleImagePreview = (uri) => {
-    if (uri) {
-      setModalImageUri(uri);
-      setModalVisible(true);
-      resetZoomAndPosition();
-    } else {
-      setModalVisible(false);
-      setModalImageUri(null);
-      resetZoomAndPosition();
+  const openImageViewer = (index) => {
+    // Prepare the images array for ImageViewer
+    const imageUrls = [];
+    
+    if (timetableUri) {
+      imageUrls.push({ url: timetableUri, props: { title: 'Class Timetable' } });
     }
+    
+    if (calendarUri) {
+      imageUrls.push({ url: calendarUri, props: { title: 'Academic Calendar' } });
+    }
+    
+    setImages(imageUrls);
+    setCurrentImageIndex(index);
+    setModalVisible(true);
   };
-
-  const resetZoomAndPosition = () => {
-    setScale(1);
-    setSavedScale(1);
-    setTranslateX(0);
-    setTranslateY(0);
-  };
-
-  // Define pan gesture
-  const panGesture = Gesture.Pan()
-    .minDistance(10)
-    .enabled(scale > 1)
-    .onUpdate((event) => {
-      if (scale > 1) {
-        setTranslateX(translateX + event.changeX);
-        setTranslateY(translateY + event.changeY);
-      }
-    });
-
-  // Define pinch gesture for zooming
-  const pinchGesture = Gesture.Pinch()
-    .onStart(() => {
-      setSavedScale(scale);
-    })
-    .onUpdate((event) => {
-      // Apply new scale based on pinch gesture
-      let newScale = savedScale * event.scale;
-      
-      // Limit scale between 0.5 and 5
-      newScale = Math.min(Math.max(newScale, 0.5), 5);
-      
-      setScale(newScale);
-      
-      console.log("Pinch Update - Scale:", newScale, "Event Scale:", event.scale);
-    });
-
-  // Define double tap gesture
-  const doubleTapGesture = Gesture.Tap()
-    .numberOfTaps(2)
-    .onEnd(() => {
-      // Toggle between normal and zoomed view (2x)
-      const newScale = scale > 1 ? 1 : 2.5;
-      
-      setScale(newScale);
-      setSavedScale(newScale);
-      
-      // If scaling back to 1, reset position
-      if (newScale === 1) {
-        setTranslateX(0);
-        setTranslateY(0);
-      }
-      
-      console.log("Double Tap - New Scale:", newScale);
-    });
-
-  // Combine all gestures
-  const composedGestures = Gesture.Exclusive(
-    doubleTapGesture,
-    Gesture.Simultaneous(
-      pinchGesture,
-      panGesture
-    )
-  );
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -144,7 +107,7 @@ const PreviewScreen = () => {
       
         <ScrollView contentContainerStyle={styles.scrollContainer}>
           {timetableUri && (
-            <TouchableOpacity onPress={() => toggleImagePreview(timetableUri)} style={styles.imageContainer}>
+            <TouchableOpacity onPress={() => openImageViewer(0)} style={styles.imageContainer}>
               <Text style={styles.imageLabel}>Class Timetable</Text>
               <Image
                 source={{ uri: timetableUri }}
@@ -155,7 +118,7 @@ const PreviewScreen = () => {
           )}
 
           {calendarUri && (
-            <TouchableOpacity onPress={() => toggleImagePreview(calendarUri)} style={styles.imageContainer}>
+            <TouchableOpacity onPress={() => openImageViewer(timetableUri ? 1 : 0)} style={styles.imageContainer}>
               <Text style={styles.imageLabel}>Academic Calendar</Text>
               <Image
                 source={{ uri: calendarUri }}
@@ -169,60 +132,59 @@ const PreviewScreen = () => {
         <Modal 
           visible={isModalVisible} 
           transparent={true} 
-          onRequestClose={() => toggleImagePreview(null)}
+          onRequestClose={() => setModalVisible(false)}
           animationType="fade"
           statusBarTranslucent
           hardwareAccelerated
         >
           <View style={styles.modalBackground}>
-            <TouchableOpacity 
-              style={styles.closeButton} 
-              onPress={() => toggleImagePreview(null)}
-              activeOpacity={0.7}
-              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-            >
-              <Text style={styles.closeButtonText}>Close</Text>
-            </TouchableOpacity>
-            
-            <View style={styles.modalContainer}>
-              {modalImageUri && (
-                <GestureDetector gesture={composedGestures}>
-                  <View style={styles.modalImageContainer}>
-                    <Image
-                      source={{ uri: modalImageUri }}
-                      style={[
-                        styles.fullImage, 
-                        { 
-                          transform: [
-                            { scale: scale }, 
-                            { translateX: translateX }, 
-                            { translateY: translateY }
-                          ] 
-                        }
-                      ]}
-                      resizeMode="contain"
-                      onError={(error) => {
-                        console.error('Image loading error:', error);
-                        Alert.alert('Error', 'Failed to load image');
-                        toggleImagePreview(null);
-                      }}
-                    />
-                  </View>
-                </GestureDetector>
+            <ImageViewer
+              imageUrls={images}
+              index={currentImageIndex}
+              enableSwipeDown={true}
+              onSwipeDown={() => setModalVisible(false)}
+              saveToLocalByLongPress={false}
+              renderHeader={() => (
+                <TouchableOpacity 
+                  style={styles.closeButton} 
+                  onPress={() => setModalVisible(false)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.closeButtonText}>Close</Text>
+                </TouchableOpacity>
               )}
-            </View>
-            
-            <TouchableOpacity 
-              style={styles.resetButton} 
-              onPress={resetZoomAndPosition}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.resetButtonText}>Reset</Text>
-            </TouchableOpacity>
-            
-            <View style={styles.zoomIndicator}>
-              <Text style={styles.zoomText}>{Math.round(scale * 100)}%</Text>
-            </View>
+              renderIndicator={(currentIndex, allSize) => (
+                <View style={styles.indicatorContainer}>
+                  <Text style={styles.indicatorText}>
+                    {images[currentIndex - 1]?.props?.title || ''}
+                  </Text>
+                  {allSize > 1 && (
+                    <Text style={styles.pageIndicator}>
+                      {currentIndex}/{allSize}
+                    </Text>
+                  )}
+                </View>
+              )}
+              onClick={() => {
+                // Toggle visibility of the title bar
+                return true; // return true to prevent the dismiss
+              }}
+              backgroundColor="rgba(0, 0, 0, 0.9)"
+              loadingRender={() => (
+                <View style={styles.loadingContainer}>
+                  <Text style={styles.loadingText}>Loading...</Text>
+                </View>
+              )}
+              renderFooter={() => (
+                <View style={styles.footerContainer}>
+                  <Text style={styles.footerText}>Pinch to zoom • Double tap to reset</Text>
+                </View>
+              )}
+              onError={(error) => {
+                console.error('ImageViewer error:', error);
+                Alert.alert('Error', 'Failed to load image');
+              }}
+            />
           </View>
         </Modal>
       </SafeAreaView>
@@ -298,26 +260,6 @@ const styles = StyleSheet.create({
   modalBackground: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-  },
-  modalImageContainer: {
-    width: screenWidth,
-    height: screenHeight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  fullImage: {
-    width: screenWidth,
-    height: screenHeight * 0.8,
-    alignSelf: 'center',
   },
   closeButton: {
     position: 'absolute',
@@ -337,17 +279,17 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
-  resetButton: {
+  indicatorContainer: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 60 : 40,
-    right: 20,
+    top: Platform.OS === 'ios' ? 60 : 40,
+    left: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
     padding: 12,
     borderRadius: 8,
     zIndex: 999,
     elevation: 5,
   },
-  resetButtonText: {
+  indicatorText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
@@ -355,30 +297,36 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
-  zoomIndicator: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 60 : 40,
-    left: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    padding: 8,
-    borderRadius: 8,
-    zIndex: 999,
-    elevation: 5,
-  },
-  zoomText: {
+  pageIndicator: {
     color: '#fff',
     fontSize: 14,
-    fontWeight: 'bold',
+    marginTop: 4,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  footerContainer: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 40 : 30,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 8,
+    borderRadius: 8,
+  },
+  footerText: {
+    color: '#fff',
+    fontSize: 12,
+    textAlign: 'center',
+  },
 });
 
-const WrappedPreviewScreen = () => (
-  <GestureHandlerRootView style={{ flex: 1 }}>
-    <PreviewScreen />
-  </GestureHandlerRootView>
-);
-
-export default WrappedPreviewScreen;
+export default PreviewScreen;

@@ -33,33 +33,8 @@ const COLORS = {
 const SECTION_OPTIONS = Array.from({length: 30}, (_, i) => `S${String(i + 1).padStart(2, '0')}`);const SEMESTER_OPTIONS = ['Odd', 'Even'];
 const YEAR_OPTIONS = ['II', 'III'];
 
-const UserDetailsScreen = ({ navigation, onComplete }) => {
-  const [section, setSection] = useState('');
-  const [year, setYear] = useState('');
-  const [semester, setSemester] = useState('');
-  const [showSectionModal, setShowSectionModal] = useState(false);
-  const [showYearModal, setShowYearModal] = useState(false);
-  const [showSemesterModal, setShowSemesterModal] = useState(false);
-
-  React.useEffect(() => {
-    loadUserDetails();
-  }, []);
-
-  const loadUserDetails = async () => {
-    try {
-      const savedDetails = await AsyncStorage.getItem('userDetails');
-      if (savedDetails) {
-        const details = JSON.parse(savedDetails);
-        setSection(details.section);
-        setYear(details.year);
-        setSemester(details.semester);
-      }
-    } catch (error) {
-      console.error('Error loading user details:', error);
-    }
-  };
-
-  const processAndCacheImage = async (imageUrl, storageKey) => {
+// Helper function to process and cache images
+const processAndCacheImage = async (imageUrl, storageKey) => {
     try {
         // Download image to cache
         const cacheFilePath = `${FileSystem.cacheDirectory}${storageKey}_${Date.now()}.jpg`;
@@ -90,9 +65,18 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
     }
 };
 
-const fetchAndCacheTimeTable = async (yearValue, sectionValue, semesterValue) => {
+// Function to fetch and cache timetable and calendar images
+export const fetchAndCacheTimeTable = async (yearValue, sectionValue, semesterValue) => {
     try {
+        console.log('Starting fetchAndCacheTimeTable:', { yearValue, sectionValue, semesterValue });
         const sectionNumber = sectionValue.substring(1);
+
+        // Check if images are already cached
+        const [cachedTimeTable, cachedCalendar] = await Promise.all([
+            AsyncStorage.getItem('timeTableUri'),
+            AsyncStorage.getItem('calendarUri')
+        ]);
+        console.log('Cache status:', { cachedTimeTable: !!cachedTimeTable, cachedCalendar: !!cachedCalendar });
 
         // Timetable file key
         const timetableKey = `Time-Tables/${yearValue}-year-S${sectionNumber}.jpg`;
@@ -102,28 +86,96 @@ const fetchAndCacheTimeTable = async (yearValue, sectionValue, semesterValue) =>
         const calendarKey = `Calenders/${semesterValue}-Semester.jpg`;
         const calendarApiUrl = `https://faculty-availability-api.onrender.com/get-item/?object_key=${calendarKey}`;
 
-        for (const [apiUrl, storageKey] of [
-            [timetableApiUrl, 'timeTableUri'],
-            [calendarApiUrl, 'calendarUri']
-        ]) {
-            console.log('Fetching:', apiUrl);
-            const response = await fetch(apiUrl);
-            const data = await response.json();
-            
-            if (data.presigned_url) {
-                // Process and cache the image
-                const processedImageUri = await processAndCacheImage(data.presigned_url, storageKey);
-                
-                // Save the processed image URI to AsyncStorage
-                await AsyncStorage.setItem(storageKey, processedImageUri);
-            }
+        console.log('API URLs:', { timetableApiUrl, calendarApiUrl });
+
+        const fetchQueue = [];
+        
+        // Always fetch new images when details are updated
+        fetchQueue.push([timetableApiUrl, 'timeTableUri', timetableKey]);
+        fetchQueue.push([calendarApiUrl, 'calendarUri', calendarKey]);
+
+        const results = await Promise.allSettled(
+            fetchQueue.map(async ([apiUrl, storageKey, fileKey]) => {
+                try {
+                    console.log(`Fetching ${storageKey} from ${apiUrl}`);
+                    const response = await fetch(apiUrl);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log(`API response for ${storageKey}:`, { status: response.status, hasPresignedUrl: !!data.presigned_url });
+                    
+                    if (!data.presigned_url) {
+                        throw new Error(`No presigned URL available for ${fileKey}`);
+                    }
+
+                    // Process and cache the image
+                    const processedImageUri = await processAndCacheImage(data.presigned_url, storageKey);
+                    console.log(`Successfully processed image for ${storageKey}`);
+                    
+                    // Save the processed image URI to AsyncStorage
+                    await AsyncStorage.setItem(storageKey, processedImageUri);
+                    console.log(`Successfully cached ${storageKey}`);
+                    
+                    return { success: true, storageKey };
+                } catch (error) {
+                    console.error(`Error processing ${storageKey}:`, error.message);
+                    // Throw the error to be caught by Promise.allSettled
+                    throw error;
+                }
+            })
+        );
+
+        // Log results summary
+        const summary = results.map((result, index) => ({
+            file: fetchQueue[index][2],
+            status: result.status,
+            ...(result.status === 'rejected' && { error: result.reason?.message })
+        }));
+        console.log('Fetch and cache summary:', summary);
+
+        // Check if any critical errors occurred
+        const failedOperations = results.filter(result => result.status === 'rejected');
+        if (failedOperations.length > 0) {
+            console.warn(`${failedOperations.length} operations failed during fetch and cache`);
         }
+
     } catch (error) {
-        console.error('Error fetching timetable or calendar:', error);
+        console.error('Critical error in fetchAndCacheTimeTable:', error);
+        throw error; // Propagate error to caller
     }
 };
 
-  const saveUserDetails = async () => {
+
+const UserDetailsScreen = ({ navigation, onComplete }) => {
+  const [section, setSection] = useState('');
+  const [year, setYear] = useState('');
+  const [semester, setSemester] = useState('');
+  const [showSectionModal, setShowSectionModal] = useState(false);
+  const [showYearModal, setShowYearModal] = useState(false);
+  const [showSemesterModal, setShowSemesterModal] = useState(false);
+
+  React.useEffect(() => {
+    loadUserDetails();
+  }, []);
+
+  const loadUserDetails = async () => {
+    try {
+      const savedDetails = await AsyncStorage.getItem('userDetails');
+      if (savedDetails) {
+        const details = JSON.parse(savedDetails);
+        setSection(details.section);
+        setYear(details.year);
+        setSemester(details.semester);
+      }
+    } catch (error) {
+      console.error('Error loading user details:', error);
+    }
+  };
+
+ const saveUserDetails = async () => {
     try {
       if (!section.trim() || !year.trim() || !semester.trim()) {
         Alert.alert('Required Fields', 'Please fill in all fields');
@@ -142,7 +194,7 @@ const fetchAndCacheTimeTable = async (yearValue, sectionValue, semesterValue) =>
       if (onComplete) {
         onComplete();
       } else if (navigation) {
-        navigation.replace('MainTabs');
+        navigation.navigate('MainTabs');
       } else {
         console.warn('Neither navigation nor onComplete callback provided');
       }

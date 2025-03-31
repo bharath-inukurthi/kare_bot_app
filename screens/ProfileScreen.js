@@ -10,7 +10,8 @@ import {
   SafeAreaView,
   TextInput,
   Modal,
-  Pressable
+  Pressable,
+  Animated
 } from 'react-native';
 import { getAuth, signOut } from 'firebase/auth';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,11 +33,33 @@ const COLORS = {
 };
 
 const ProfileScreen = () => {
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const scaleAnim = React.useRef(new Animated.Value(0.3)).current;
+
+  const animateCredits = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      })
+    ]).start();
+  };
+  
+
+  
   const [user, setUser] = React.useState(null);
   const [isEditing, setIsEditing] = React.useState(false);
   const [showSectionModal, setShowSectionModal] = React.useState(false);
   const [showYearModal, setShowYearModal] = React.useState(false);
   const [showSemesterModal, setShowSemesterModal] = React.useState(false);
+  const [showCreditsModal, setShowCreditsModal] = React.useState(false);
   const [section, setSection] = React.useState('');
   const [year, setYear] = React.useState('');
   const [semester, setSemester] = React.useState('');
@@ -93,6 +116,7 @@ const ProfileScreen = () => {
 
       await AsyncStorage.setItem('userDetails', JSON.stringify(userDetails));
       // Fetch and cache timetable after updating details
+      console.log('Fetching timetable for:', year, section, semester);
       await fetchAndCacheTimeTable(year, section, semester);
       setIsEditing(false);
       Alert.alert('Success', 'Profile details updated successfully');
@@ -127,6 +151,10 @@ const ProfileScreen = () => {
   };
 
   // Mock data for profile options
+  const handleShowCredits = () => {
+    setShowCreditsModal(true);
+  };
+
   const profileOptions = [
     {
       id: '1',
@@ -149,6 +177,13 @@ const ProfileScreen = () => {
       icon: '🏫',
       action: () => Linking.openURL('https://hostels.kalasalingam.ac.in/')
     },
+    {
+      id: '4',
+      title: 'Developer Credits',
+      description: 'Meet the awesome team behind KARE Bot',
+      icon: '🚀',
+      action: handleShowCredits
+    },
     /*{
       id: '4',
       title: 'Notifications',
@@ -166,256 +201,430 @@ const ProfileScreen = () => {
   ];
 
   return (
-    <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={COLORS.primaryGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
+    <>
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showCreditsModal}
+        onRequestClose={() => setShowCreditsModal(false)}
       >
-        <Text style={styles.headerTitle}>My Profile</Text>
-      </LinearGradient>
-      
-      {isEditing && (
-        <>
-          <Modal
-            animationType="slide"
-            transparent={true}
-            visible={isEditing}
-            onRequestClose={() => setIsEditing(false)}
+        <Animated.View style={[styles.creditsModal, { opacity: fadeAnim }]}>
+          <TouchableOpacity
+            style={styles.creditsDismiss}
+            onPress={() => setShowCreditsModal(false)}
           >
-            <Pressable 
-              style={styles.modalOverlay}
-              onPress={() => setIsEditing(false)}
+            <Text style={styles.creditsDismissText}>×</Text>
+          </TouchableOpacity>
+          <ScrollView contentContainerStyle={styles.creditsContent}>
+            <Animated.View style={{ transform: [{ scale: scaleAnim }], alignItems: 'center', width: '100%' }}>
+              <Text style={styles.creditsTitle}>✨ KARE Bot Squad ✨</Text>
+              <Text style={styles.creditsText}>"Turning Coffee into Code"</Text>
+              <Text style={styles.creditsRole}>🎭 Supreme Meme Lord 🎭</Text>
+              <Text style={styles.creditsText}>Bharathi "The Memelord" Nukurthi</Text>
+              <Text style={styles.creditsRole}>🐛 Bug Bounty Hunter 🐛</Text>
+              <Text style={styles.creditsText}>Error 404: Sleep Not Found</Text>
+              <Text style={styles.creditsRole}>🎨 Pixel Perfectionist 🎨</Text>
+              <Text style={styles.creditsText}>CSS Whisperer</Text>
+              <Text style={styles.creditsRole}>🤖 AI Sensei 🤖</Text>
+              <Text style={styles.creditsText}>Professional Prompt Engineer</Text>
+            </Animated.View>
+          </ScrollView>
+        </Animated.View>
+      </Modal>
+      
+      <SafeAreaView style={styles.container}>
+        <LinearGradient
+          colors={COLORS.primaryGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
+        >
+          <Text style={styles.headerTitle}>My Profile</Text>
+        </LinearGradient>
+        
+        {isEditing && (
+          <>
+            <Modal
+              animationType="slide"
+              transparent={true}
+              visible={isEditing}
+              onRequestClose={() => setIsEditing(false)}
             >
-              <View style={styles.modalContainer}>
-                <Text style={styles.modalTitle}>Edit Academic Details</Text>
-                
-                <View style={styles.editContainer}>
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Section</Text>
-                    <TouchableOpacity
-                      style={[styles.dropdownButton, section && styles.dropdownButtonSelected]}
-                      onPress={() => setShowSectionModal(true)}
-                    >
-                      <Text style={[styles.dropdownButtonText, !section && styles.placeholderText]}>
-                        {section || 'Select your section'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Year</Text>
-                    <TouchableOpacity
-                      style={[styles.dropdownButton, year && styles.dropdownButtonSelected]}
-                      onPress={() => setShowYearModal(true)}
-                    >
-                      <Text style={[styles.dropdownButtonText, !year && styles.placeholderText]}>
-                        {year || 'Select your year'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Semester</Text>
-                    <TouchableOpacity
-                      style={[styles.dropdownButton, semester && styles.dropdownButtonSelected]}
-                      onPress={() => setShowSemesterModal(true)}
-                    >
-                      <Text style={[styles.dropdownButtonText, !semester && styles.placeholderText]}>
-                        {semester || 'Select your semester'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.buttonContainer}>
-                    <TouchableOpacity 
-                      style={styles.cancelButton}
-                      onPress={() => setIsEditing(false)}
-                    >
-                      <Text style={styles.cancelButtonText}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.saveButton}
-                      onPress={handleSaveDetails}
-                    >
-                      <Text style={styles.saveButtonText}>Save</Text>
-                    </TouchableOpacity>
+              <Pressable 
+                style={styles.modalOverlay}
+                onPress={() => setIsEditing(false)}
+              >
+                <View style={styles.modalContainer}>
+                  <Text style={styles.modalTitle}>Edit Academic Details</Text>
+                  
+                  <View style={styles.editContainer}>
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.label}>Section</Text>
+                      <TouchableOpacity
+                        style={[styles.dropdownButton, section && styles.dropdownButtonSelected]}
+                        onPress={() => setShowSectionModal(true)}
+                      >
+                        <Text style={[styles.dropdownButtonText, !section && styles.placeholderText]}>
+                          {section || 'Select your section'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+  
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.label}>Year</Text>
+                      <TouchableOpacity
+                        style={[styles.dropdownButton, year && styles.dropdownButtonSelected]}
+                        onPress={() => setShowYearModal(true)}
+                      >
+                        <Text style={[styles.dropdownButtonText, !year && styles.placeholderText]}>
+                          {year || 'Select your year'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+  
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.label}>Semester</Text>
+                      <TouchableOpacity
+                        style={[styles.dropdownButton, semester && styles.dropdownButtonSelected]}
+                        onPress={() => setShowSemesterModal(true)}
+                      >
+                        <Text style={[styles.dropdownButtonText, !semester && styles.placeholderText]}>
+                          {semester || 'Select your semester'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+  
+                    <View style={styles.buttonContainer}>
+                      <TouchableOpacity 
+                        style={styles.cancelButton}
+                        onPress={() => setIsEditing(false)}
+                      >
+                        <Text style={styles.cancelButtonText}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.saveButton}
+                        onPress={handleSaveDetails}
+                      >
+                        <Text style={styles.saveButtonText}>Save</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
-              </View>
-            </Pressable>
-          </Modal>
-
-          <Modal
-            visible={showSectionModal}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setShowSectionModal(false)}
-          >
-            <Pressable 
-              style={styles.modalOverlay}
-              onPress={() => setShowSectionModal(false)}
+              </Pressable>
+            </Modal>
+  
+            <Modal
+              visible={showSectionModal}
+              transparent={true}
+              animationType="fade"
+              onRequestClose={() => setShowSectionModal(false)}
             >
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Select Section</Text>
-                <ScrollView style={styles.optionsList}>
-                  {SECTION_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[styles.optionItem, section === option && styles.selectedOption]}
-                      onPress={() => {
-                        setSection(option);
-                        setShowSectionModal(false);
-                      }}
-                    >
-                      <Text style={[styles.optionText, section === option && styles.selectedOptionText]}>
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            </Pressable>
-          </Modal>
-
-          <Modal
-            visible={showSemesterModal}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setShowSemesterModal(false)}
-          >
-            <Pressable 
-              style={styles.modalOverlay}
-              onPress={() => setShowSemesterModal(false)}
+              <Pressable 
+                style={styles.modalOverlay}
+                onPress={() => setShowSectionModal(false)}
+              >
+                <View style={styles.modalContent}>
+                  <Text style={styles.modalTitle}>Select Section</Text>
+                  <ScrollView style={styles.optionsList}>
+                    {SECTION_OPTIONS.map((option) => (
+                      <TouchableOpacity
+                        key={option}
+                        style={[styles.optionItem, section === option && styles.selectedOption]}
+                        onPress={() => {
+                          setSection(option);
+                          setShowSectionModal(false);
+                        }}
+                      >
+                        <Text style={[styles.optionText, section === option && styles.selectedOptionText]}>
+                          {option}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              </Pressable>
+            </Modal>
+  
+            <Modal
+              visible={showSemesterModal}
+              transparent={true}
+              animationType="fade"
+              onRequestClose={() => setShowSemesterModal(false)}
             >
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Select Semester</Text>
-                <ScrollView style={styles.optionsList}>
-                  {SEMESTER_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[styles.optionItem, semester === option && styles.selectedOption]}
-                      onPress={() => {
-                        setSemester(option);
-                        setShowSemesterModal(false);
-                      }}
-                    >
-                      <Text style={[styles.optionText, semester === option && styles.selectedOptionText]}>
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            </Pressable>
-          </Modal>
-
-          <Modal
-            visible={showYearModal}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setShowYearModal(false)}
-          >
-            <Pressable 
-              style={styles.modalOverlay}
-              onPress={() => setShowYearModal(false)}
+              <Pressable 
+                style={styles.modalOverlay}
+                onPress={() => setShowSemesterModal(false)}
+              >
+                <View style={styles.modalContent}>
+                  <Text style={styles.modalTitle}>Select Semester</Text>
+                  <ScrollView style={styles.optionsList}>
+                    {SEMESTER_OPTIONS.map((option) => (
+                      <TouchableOpacity
+                        key={option}
+                        style={[styles.optionItem, semester === option && styles.selectedOption]}
+                        onPress={() => {
+                          setSemester(option);
+                          setShowSemesterModal(false);
+                        }}
+                      >
+                        <Text style={[styles.optionText, semester === option && styles.selectedOptionText]}>
+                          {option}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              </Pressable>
+            </Modal>
+  
+            <Modal
+              visible={showYearModal}
+              transparent={true}
+              animationType="fade"
+              onRequestClose={() => setShowYearModal(false)}
             >
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Select Year</Text>
-                <ScrollView style={styles.optionsList}>
-                  {YEAR_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[styles.optionItem, year === option && styles.selectedOption]}
-                      onPress={() => {
-                        setYear(option);
-                        setShowYearModal(false);
-                      }}
-                    >
-                      <Text style={[styles.optionText, year === option && styles.selectedOptionText]}>
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            </Pressable>
-          </Modal>
-        </>
-      )}
-      
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={true}
-        bounces={true}
-        alwaysBounceVertical={true}
-      >
-        <View style={styles.profileHeader}>
-          <Image 
-            source={user?.photoURL ? { uri: user.photoURL } : require('../assets/default-avatar.png')} 
-            style={styles.profileImage}
-          />
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{user?.displayName || 'KLU Student'}</Text>
-            <Text style={styles.profileEmail}>{user?.email}</Text>
-            <Text style={styles.profileRole}>{user?.providerId === 'google.com' ? 'Google User' : 'Student'}</Text>
-            {section && year && semester && (
-              <View style={styles.academicInfo}>
-                <Text style={styles.academicInfoText}>Section {section} • Year {year} • {semester} Semester</Text>
-              </View>
-            )}
+              <Pressable 
+                style={styles.modalOverlay}
+                onPress={() => setShowYearModal(false)}
+              >
+                <View style={styles.modalContent}>
+                  <Text style={styles.modalTitle}>Select Year</Text>
+                  <ScrollView style={styles.optionsList}>
+                    {YEAR_OPTIONS.map((option) => (
+                      <TouchableOpacity
+                        key={option}
+                        style={[styles.optionItem, year === option && styles.selectedOption]}
+                        onPress={() => {
+                          setYear(option);
+                          setShowYearModal(false);
+                        }}
+                      >
+                        <Text style={[styles.optionText, year === option && styles.selectedOptionText]}>
+                          {option}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              </Pressable>
+            </Modal>
+          </>
+        )}
+        
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={true}
+          bounces={true}
+          alwaysBounceVertical={true}
+        >
+          <View style={styles.profileHeader}>
+            <Image 
+              source={user?.photoURL ? { uri: user.photoURL } : require('../assets/default-avatar.png')} 
+              style={styles.profileImage}
+            />
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileName}>{user?.displayName || 'KLU Student'}</Text>
+              <Text style={styles.profileEmail}>{user?.email}</Text>
+              <Text style={styles.profileRole}>{user?.providerId === 'google.com' ? 'Google User' : 'Student'}</Text>
+              {section && year && semester && (
+                <View style={styles.academicInfo}>
+                  <Text style={styles.academicInfoText}>Section {section} • Year {year} • {semester} Semester</Text>
+                </View>
+              )}
+            </View>
           </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>University Options</Text>
-          {profileOptions.map(option => (
+  
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>University Options</Text>
+            {profileOptions.map(option => (
+              <TouchableOpacity 
+                key={option.id} 
+                style={styles.optionItem}
+                onPress={option.action}
+              >
+                <View style={styles.optionIcon}>
+                  <Text style={styles.optionIconText}>{option.icon}</Text>
+                </View>
+                <View style={styles.optionInfo}>
+                  <Text style={styles.optionTitle}>{option.title}</Text>
+                  <Text style={styles.optionDescription}>{option.description}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+          
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>App Info</Text>
             <TouchableOpacity 
-              key={option.id} 
               style={styles.optionItem}
-              onPress={option.action}
+              onPress={handleSendFeedback}
             >
               <View style={styles.optionIcon}>
-                <Text style={styles.optionIconText}>{option.icon}</Text>
+                <Text style={styles.optionIconText}>📝</Text>
               </View>
               <View style={styles.optionInfo}>
-                <Text style={styles.optionTitle}>{option.title}</Text>
-                <Text style={styles.optionDescription}>{option.description}</Text>
+                <Text style={styles.optionTitle}>Send Feedback</Text>
+                <Text style={styles.optionDescription}>Help us improve the KARE Bot app</Text>
               </View>
             </TouchableOpacity>
-          ))}
-        </View>
-        
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>App Feedback</Text>
-          <TouchableOpacity 
-            style={styles.optionItem}
-            onPress={handleSendFeedback}
+  
+            <TouchableOpacity 
+              style={styles.optionItem}
+              onPress={() => setShowCreditsModal(true)}
+            >
+              <View style={styles.optionIcon}>
+                <Text style={styles.optionIconText}>👨‍💻</Text>
+              </View>
+              <View style={styles.optionInfo}>
+                <Text style={styles.optionTitle}>Developer Credits</Text>
+                <Text style={styles.optionDescription}>Meet the team behind KARE Bot</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+  
+          <Modal
+            visible={showCreditsModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowCreditsModal(false)}
           >
-            <View style={styles.optionIcon}>
-              <Text style={styles.optionIconText}>📝</Text>
-            </View>
-            <View style={styles.optionInfo}>
-              <Text style={styles.optionTitle}>Send Feedback</Text>
-              <Text style={styles.optionDescription}>Help us improve the KARE Bot app</Text>
-            </View>
+            <Pressable 
+              style={styles.modalOverlay}
+              onPress={() => setShowCreditsModal(false)}
+            >
+              <View style={[styles.modalContent, styles.creditsModal]}>
+                <Text style={styles.creditsTitle}>Written & Directed by</Text>
+                <Text style={styles.creditsText}>Inukurthi Bharath Kumar</Text>
+                <Text style={styles.creditsText}>DR. K. Vignesh</Text>
+                
+                <Text style={[styles.creditsTitle, styles.specialThanks]}>Special Thanks to</Text>
+                <Text style={styles.creditsText}>MLSC Kare</Text>
+                <Text style={styles.creditsText}>GDG Kare</Text>
+              </View>
+            </Pressable>
+          </Modal>
+          
+          <TouchableOpacity 
+            style={styles.signOutButton}
+            onPress={handleSignOut}
+          >
+            <Text style={styles.signOutButtonText}>Sign Out</Text>
           </TouchableOpacity>
-        </View>
-        
-        <TouchableOpacity 
-          style={styles.signOutButton}
-          onPress={handleSignOut}
-        >
-          <Text style={styles.signOutButtonText}>Sign Out</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </>
   );
+}
 
-};
 
 const styles = StyleSheet.create({
+  creditsModal: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backdropFilter: 'blur(10px)',
+  },
+  creditsContent: {
+    width: '100%',
+    height: '100%',
+    padding: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creditsTitle: {
+    fontFamily: 'System',
+    fontSize: 48,
+    fontWeight: '900',
+    color: '#fff',
+    textTransform: 'uppercase',
+    marginBottom: 30,
+    textShadowColor: '#ff00ff',
+    textShadowOffset: { width: 3, height: 3 },
+    textShadowRadius: 6,
+    transform: [{ rotate: '-3deg' }],
+  },
+  creditsText: {
+    fontFamily: 'System',
+    fontSize: 28,
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 20,
+    fontStyle: 'italic',
+    textShadowColor: '#00ffff',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  creditsRole: {
+    fontFamily: 'System',
+    fontSize: 22,
+    color: '#ff69b4',
+    textAlign: 'center',
+    marginBottom: 35,
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+    textShadowColor: '#000',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 4,
+    transform: [{ rotate: '2deg' }],
+  },
+  creditsDismiss: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    padding: 15,
+    zIndex: 1000,
+  },
+  creditsDismissText: {
+    color: '#fff',
+    fontSize: 40,
+    textShadowColor: '#ff00ff',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 4,
+  },
+
+  creditsContent: {
+    width: '100%',
+    padding: 20,
+    alignItems: 'center',
+  },
+  creditsTitle: {
+    fontFamily: 'System',
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#fff',
+    textTransform: 'uppercase',
+    marginBottom: 20,
+    textShadowColor: '#000',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 4,
+  },
+  creditsText: {
+    fontFamily: 'System',
+    fontSize: 24,
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 15,
+    fontStyle: 'italic',
+  },
+  creditsRole: {
+    fontFamily: 'System',
+    fontSize: 18,
+    color: '#ff69b4',
+    textAlign: 'center',
+    marginBottom: 30,
+    textTransform: 'uppercase',
+  },
+  creditsDismiss: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    padding: 10,
+  },
+  creditsDismissText: {
+    color: '#fff',
+    fontSize: 30,
+  },
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -593,6 +802,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+  },
+  creditsModal: {
+    backgroundColor: '#000000',
+    padding: 30,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  creditsTitle: {
+    color: '#ffffff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  creditsText: {
+    color: '#ffffff',
+    fontSize: 18,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  specialThanks: {
+    marginTop: 30,
   },
   modalTitle: {
     fontSize: 20,

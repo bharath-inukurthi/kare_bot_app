@@ -1,24 +1,21 @@
 import * as ImagePicker from "expo-image-picker";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   ActivityIndicator,
-  Image,
-  Share,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
+  TouchableOpacity,
   View,
   LogBox,
-  Alert,
-  TouchableOpacity,
-  SafeAreaView,
-  ScrollView,
-  Platform,
-  TextInput,
-  KeyboardAvoidingView,
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
-import uuid from "uuid";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp, getApps } from "firebase/app";
 import { 
   getAuth, 
@@ -31,15 +28,12 @@ import {
   initializeAuth,
   getReactNativePersistence
 } from "firebase/auth";
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { makeRedirectUri } from 'expo-auth-session';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
 
 // Import screens
 import FacultyAvailabilityScreen from './screens/FacultyAvailabilityScreen';
@@ -51,6 +45,20 @@ import PreviewScreen from './screens/PreviewScreen';
 
 // Prevents multiple web popup instances
 WebBrowser.maybeCompleteAuthSession();
+
+// Define the app's color scheme
+const COLORS = {
+  primary: '#0052cc', // Main blue
+  secondary: '#ffffff', // White
+  accent: '#4c9aff', // Light blue
+  text: '#172b4d', // Dark blue-gray for text
+  background: '#f4f5f7', // Light gray background
+  error: '#ff5630', // Red for errors
+  gradient: {
+    start: '#0052cc',
+    end: '#4c9aff',
+  },
+};
 
 // Firebase configuration
 const firebaseConfig = {
@@ -77,249 +85,132 @@ LogBox.ignoreLogs(['Setting a timer for a long period']);
 // Create a Tab Navigator
 const Tab = createBottomTabNavigator();
 
-// Define the app's color scheme
-const COLORS = {
-  primary: '#0052cc', // Main blue
-  secondary: '#ffffff', // White
-  accent: '#4c9aff', // Light blue
-  text: '#172b4d', // Dark blue-gray for text
-  background: '#f4f5f7', // Light gray background
-  error: '#ff5630', // Red for errors
-  gradient: {
-    start: '#0052cc',
-    end: '#4c9aff',
-  },
-};
-
 export default function App() {
+  // State variables
   const [user, setUser] = useState(null);
-  const [image, setImage] = useState(null);
-  const [uploading, setUploading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
-
-  return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <NavigationContainer>
-        <TabNavigator user={user} />
-      </NavigationContainer>
-    </GestureHandlerRootView>
-  );
-}
-
-const TabNavigator = ({ user }) => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [debugMode, setDebugMode] = useState(__DEV__); // Enable debug in development
-  const [hasUserDetails, setHasUserDetails] = useState(false);
-  const [checkingDetails, setCheckingDetails] = useState(true);
-  const [showUserDetails, setShowUserDetails] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showUserDetails, setShowUserDetails] = useState(false);
+  const [hasUserDetails, setHasUserDetails] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
 
-  // Return the Tab Navigator directly
-  return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
-
-          if (route.name === 'Schedules') {
-            iconName = focused ? 'calendar' : 'calendar-outline';
-          } else if (route.name === 'Chat') {
-            iconName = focused ? 'chatbubble' : 'chatbubble-outline';
-          } else if (route.name === 'Availability') {
-            iconName = focused ? 'people' : 'people-outline';
-          } else if (route.name === 'Forms') {
-            iconName = focused ? 'document-text' : 'document-text-outline';
-          } else if (route.name === 'Profile') {
-            iconName = focused ? 'person' : 'person-outline';
-          }
-
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: 'gray',
-        tabBarStyle: {
-          paddingBottom: Platform.OS === 'ios' ? 20 : 0,
-          height: Platform.OS === 'ios' ? 90 : 60,
-          backgroundColor: COLORS.secondary,
-          borderTopColor: 'rgba(0, 0, 0, 0.1)',
-          display: 'flex',
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '500',
-        },
-        headerShown: false,
-      })}
-    >
-      <Tab.Screen 
-        name="Schedules" 
-        component={PreviewScreen}
-        initialParams={{ user: user }}
-      />
-      
-      <Tab.Screen 
-        name="Availability" 
-        component={FacultyAvailabilityScreen}
-        initialParams={{ user: user }}
-      />
-      <Tab.Screen 
-        name="Chat" 
-        component={ChatBotScreen}
-        initialParams={{ user: user }}
-      />
-      <Tab.Screen 
-        name="Forms" 
-        component={FormsScreen}
-        initialParams={{ user: user }}
-      />
-      <Tab.Screen 
-        name="Profile" 
-        component={ProfileScreen}
-        initialParams={{ user: user }}
-      />
-    </Tab.Navigator>
-  );
-
-
-  // Add a helper function to get the correct redirect URI
-  const getRedirectURI = () => {
-    // For Expo Go, we must use the Expo proxy
+  // Calculate redirect URI for Google auth
+  const redirectUri = useMemo(() => {
     if (Platform.OS !== 'web' && __DEV__) {
-      // IMPORTANT: Replace with your actual Expo username if needed
       return `https://auth.expo.io/@bharath-inukurthi/kare-bot`;
     } else if (Platform.OS === 'web') {
       return 'http://localhost:8082';
     } else {
       return 'com.kalasalingam.karebot://';
     }
-  };
+  }, []);
 
-  // Initialize Google Auth Request hook at the top level
+  // Initialize Google Auth Request hook
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: '368113711736-vd9kpllf1b3f5oh2qhqa2qh6vko3edta.apps.googleusercontent.com',
     androidClientId: '368113711736-n9vnkt8m5kv6ce8nq2nlrr05cr5kirp0.apps.googleusercontent.com',
     iosClientId: '368113711736-8dicp506f6rk4biti5e009qag1jgvqmk.apps.googleusercontent.com',
     webClientId: '368113711736-vd9kpllf1b3f5oh2qhqa2qh6vko3edta.apps.googleusercontent.com',
     expoClientId: '368113711736-vd9kpllf1b3f5oh2qhqa2qh6vko3edta.apps.googleusercontent.com',
-    redirectUri: makeRedirectUri({
-      useProxy: true,
-      path: 'expo-auth-session'
-    }),
+    redirectUri: redirectUri,
     scopes: ['profile', 'email'],
-    redirectUri: getRedirectURI(),
     usePKCE: true,
     prompt: 'select_account',
   });
 
+  // Effect for checking user details
+  useEffect(() => {
+    const checkUserDetails = async () => {
+      if (!user) return;
+      try {
+        const savedDetails = await AsyncStorage.getItem('userDetails');
+        const hasDetails = !!savedDetails;
+        setShowUserDetails(!hasDetails);
+        setHasUserDetails(hasDetails);
+      } catch (error) {
+        console.error('Error checking user details:', error);
+        setShowUserDetails(true);
+        setHasUserDetails(false);
+      }
+    };
+    checkUserDetails();
+  }, [user]);
+
+  // Effect for handling auth state changes
   useEffect(() => {
     const auth = getAuth();
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
-      setInitializing(false);
-      setCheckingDetails(false); // Reset checking details state
+      if (initializing) setInitializing(false);
     });
 
-    // Set a timeout to prevent infinite loading
     const timeout = setTimeout(() => {
-      setInitializing(false);
-      setCheckingDetails(false);
-      console.log('Auth initialization timed out');
-    }, 10000); // 10 second timeout
+      if (initializing) {
+        setInitializing(false);
+        console.log('Auth initialization timed out');
+      }
+    }, 10000);
 
-    // Cleanup subscription and timeout
     return () => {
       unsubscribe();
       clearTimeout(timeout);
     };
-  }, []);
+  }, [initializing]);
 
   // Effect for handling Google authentication response
   useEffect(() => {
-    if (!response) return; // Early return if no response
+    if (!response || response.type !== 'success') return;
 
-    if (response.type === 'success') {
-      console.log('Authentication successful, processing token...');
-      
-      // Validate id_token is present
-      if (!response.params.id_token) {
-        console.error('Error: No id_token received in response', response);
-        Alert.alert('Authentication Error', 'Failed to receive authentication token');
+    const handleGoogleSignIn = async () => {
+      try {
+        if (!response.params.id_token) {
+          console.error('Error: No id_token received in response', response);
+          Alert.alert('Authentication Error', 'Failed to receive authentication token');
+          setIsLoading(false);
+          return;
+        }
+        
+        const { id_token } = response.params;
+        const credential = GoogleAuthProvider.credential(id_token);
+        const auth = getAuth();
+        
+        setIsLoading(true);
+        
+        const result = await signInWithCredential(auth, credential);
+        const userEmail = result.user.email;
+        
+        if (!userEmail.endsWith('@klu.ac.in')) {
+          await signOut(auth);
+          throw new Error('Only @klu.ac.in email addresses are allowed');
+        }
+        
+        setUser(result.user);
+      } catch (error) {
+        console.error('Google authentication error:', error);
+        let errorMessage = 'Authentication failed. Please try again.';
+        
+        if (error.code === 'auth/invalid-credential') {
+          errorMessage = 'The authentication credential is invalid. Please try again.';
+        } else if (error.code === 'auth/account-exists-with-different-credential') {
+          errorMessage = 'An account already exists with the same email address but different sign-in credentials.';
+        } else if (error.code === 'auth/operation-not-allowed') {
+          errorMessage = 'Google sign-in is not enabled for this project.';
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        
+        Alert.alert('Authentication Error', errorMessage);
+      } finally {
         setIsLoading(false);
-        return;
       }
-      
-      const { id_token } = response.params;
-      const credential = GoogleAuthProvider.credential(id_token);
-      signInWithFirebase(credential);
-    } else if (response?.type === 'error') {
-      console.error('Authentication error:', response.error);
-      console.error('Full error object:', JSON.stringify(response, null, 2));
-      setIsLoading(false);
-      
-      // Show specific message for client deleted error
-      if (response.error && response.error.includes('client was deleted')) {
-        Alert.alert(
-          'OAuth Client Error',
-          'The Google OAuth client ID has been deleted. Please update with new client IDs from Google Cloud Console.'
-        );
-      } else {
-        Alert.alert('Authentication Error', response.error || 'Unknown error during authentication');
-      }
-    } else if (response?.type === 'dismiss') {
-      console.log('Authentication dismissed by user');
-      setIsLoading(false);
-    } else if (response) {
-      console.log('Other response type:', response.type, response);
-      setIsLoading(false);
-    }
+    };
+
+    handleGoogleSignIn();
   }, [response]);
 
-  const signInWithFirebase = async (credential) => {
-    try {
-      setIsLoading(true);
-      setCheckingDetails(true); // Set checking details while authenticating
-      const auth = getAuth();
-      console.log('Attempting Google sign-in...');
-      const result = await signInWithCredential(auth, credential);
-      console.log('Google sign-in successful, user:', result.user.email);
-      
-      // Check if the email domain is klu.ac.in
-      const userEmail = result.user.email;
-      if (!userEmail.endsWith('@klu.ac.in')) {
-        // Sign out if not from the allowed domain
-        console.log('Email domain not allowed:', userEmail);
-        await signOut(auth);
-        Alert.alert(
-          "Authentication Failed",
-          "Only @klu.ac.in email addresses are allowed to sign in.",
-          [{ text: "OK" }]
-        );
-        setCheckingDetails(false); // Reset checking details state
-        return;
-      }
-      
-      console.log('User authenticated successfully with domain check:', userEmail);
-      // Setting user will trigger the UI to show the tabs
-      setUser(result.user);
-      setCheckingDetails(false); // Reset checking details state
-    } catch (error) {
-      console.error('Google sign-in error:', error.code, error.message);
-      
-      let errorMessage = error.message;
-      if (debugMode) {
-        errorMessage = `${error.code}: ${error.message}`;
-      } else {
-        errorMessage = "Authentication failed. Please try again.";
-      }
-      
-      Alert.alert("Authentication Error", errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+  // Handle email authentication (sign in or sign up)
   const handleEmailAuth = async (isSignUp = false) => {
     // Validate email domain
     if (!email.endsWith('@klu.ac.in')) {
@@ -342,7 +233,6 @@ const TabNavigator = ({ user }) => {
     }
     
     setIsLoading(true);
-    setCheckingDetails(true);
     
     try {
       const auth = getAuth();
@@ -364,7 +254,7 @@ const TabNavigator = ({ user }) => {
     } catch (error) {
       console.error('Email auth error:', error.code, error.message);
       
-      let errorMessage = error.message;
+      let errorMessage = 'Authentication failed. Please try again.';
       if (error.code === 'auth/email-already-in-use') {
         errorMessage = 'This email is already registered. Please log in instead.';
       } else if (error.code === 'auth/user-not-found') {
@@ -385,6 +275,7 @@ const TabNavigator = ({ user }) => {
     }
   };
 
+  // Create a test user for development
   const createTestUser = async () => {
     setIsLoading(true);
     const testEmail = 'test@klu.ac.in';
@@ -394,31 +285,30 @@ const TabNavigator = ({ user }) => {
       const auth = getAuth();
       console.log('Creating test user:', testEmail);
       
-      await createUserWithEmailAndPassword(auth, testEmail, testPassword)
-        .then((userCredential) => {
-          console.log('Test user created successfully');
-          Alert.alert(
-            'Test User Created',
-            `Email: ${testEmail}\nPassword: ${testPassword}\n\nYou can now sign in with these credentials.`
-          );
-        })
-        .catch((error) => {
-          if (error.code === 'auth/email-already-in-use') {
-            console.log('Test user already exists, trying to sign in');
-            return signInWithEmailAndPassword(auth, testEmail, testPassword);
-          }
+      try {
+        // Try to create a new user first
+        const userCredential = await createUserWithEmailAndPassword(auth, testEmail, testPassword);
+        console.log('Test user created successfully');
+        Alert.alert(
+          'Test User Created',
+          `Email: ${testEmail}\nPassword: ${testPassword}\n\nYou can now sign in with these credentials.`
+        );
+        setUser(userCredential.user);
+      } catch (error) {
+        // If user already exists, try to sign in
+        if (error.code === 'auth/email-already-in-use') {
+          console.log('Test user already exists, trying to sign in');
+          const userCredential = await signInWithEmailAndPassword(auth, testEmail, testPassword);
+          console.log('Signed in with test user');
+          setUser(userCredential.user);
+        } else {
           throw error;
-        })
-        .then((userCredential) => {
-          if (userCredential) {
-            console.log('Signed in with test user');
-            setUser(userCredential.user);
-          }
-        });
+        }
+      }
     } catch (error) {
       console.error('Test user error:', error.code, error.message);
       
-      let errorMessage = error.message;
+      let errorMessage = 'Failed to create or sign in with test user.';
       if (debugMode) {
         errorMessage = `${error.code}: ${error.message}`;
       }
@@ -429,48 +319,29 @@ const TabNavigator = ({ user }) => {
     }
   };
 
-  // Effect for checking user details
-  useEffect(() => {
-    const checkUserDetails = async () => {
-      if (!user) return;
-      try {
-        const savedDetails = await AsyncStorage.getItem('userDetails');
-        setShowUserDetails(!savedDetails);
-      } catch (error) {
-        console.error('Error checking user details:', error);
-        setShowUserDetails(true);
-      }
-    };
-    checkUserDetails();
-  }, [user]);
-
-  // Effect for handling auth state changes
-  useEffect(() => {
-    const auth = getAuth();
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      if (initializing) setInitializing(false);
-      setCheckingDetails(false);
-    });
-
-    const timeout = setTimeout(() => {
-      if (initializing) {
-        setInitializing(false);
-        setCheckingDetails(false);
-        console.log('Auth initialization timed out');
-      }
-    }, 10000);
-
-    return () => {
-      unsubscribe();
-      clearTimeout(timeout);
-    };
-  }, [initializing]);
-
-  if (user && showUserDetails) {
-    return <UserDetailsScreen onComplete={() => setShowUserDetails(false)} />;
+  // Render loading state
+  if (initializing) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading Kare Bot...</Text>
+      </View>
+    );
   }
 
+  // Render user details screen if needed
+  if (user && (showUserDetails || !hasUserDetails)) {
+    return (
+      <UserDetailsScreen 
+        onComplete={() => {
+          setShowUserDetails(false);
+          setHasUserDetails(true);
+        }} 
+      />
+    );
+  }
+
+  // Render login screen if not authenticated
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
@@ -481,18 +352,26 @@ const TabNavigator = ({ user }) => {
         >
           <ScrollView contentContainerStyle={styles.scrollContainer}>
             <View style={styles.loginContainer}>
+              <Text style={[styles.welcomeText, { 
+                textShadowColor: 'rgba(0, 82, 204, 0.25)', 
+                textShadowOffset: { width: 0, height: 3 }, 
+                textShadowRadius: 6 
+              }]}>
+                Welcome to Kare Bot
+              </Text>
+              <Text style={[styles.headerSubtitle, { 
+                opacity: 0.95, 
+                letterSpacing: 1 
+              }]}>
+                Kalasalingam University
+              </Text>
               
-              
-              <Text style={[styles.welcomeText, { textShadowColor: 'rgba(0, 82, 204, 0.25)', textShadowOffset: { width: 0, height: 3 }, textShadowRadius: 6 }]}>Welcome to Kare Bot</Text>
-              <Text style={[styles.headerSubtitle, { opacity: 0.95, letterSpacing: 1 }]}>Kalasalingam University</Text>
-              
-              <Text style={[styles.descriptionText,{paddingBottom:10,fontSize:15}]}>
+              <Text style={[styles.descriptionText, {paddingBottom: 10, fontSize: 15}]}>
                 Sign in with your
               </Text>
               <Text style={styles.descriptionText}>
-              @klu.ac.in email to continue
+                @klu.ac.in email to continue
               </Text>
-              
               
               <View style={styles.inputContainer}>
                 <TextInput
@@ -562,10 +441,12 @@ const TabNavigator = ({ user }) => {
                 }}
                 disabled={!request || isLoading}
               >
-                <Text style={styles.googleButtonText}>Sign in with Google</Text>
+                <Text style={styles.googleButtonText}>
+                  Sign in with Google
+                </Text>
               </TouchableOpacity>
               
-              {/* Add debug button */}
+              {/* Debug tools - only shown in development mode */}
               {__DEV__ && (
                 <View style={styles.debugContainer}>
                   <TouchableOpacity 
@@ -612,84 +493,56 @@ const TabNavigator = ({ user }) => {
     );
   }
 
-
-
-  // Render loading state or appropriate screen based on conditions
-  if (initializing) {
-    return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading Kare Bot...</Text>
-      </View>
-    );
-  }
-
-  if (checkingDetails) {
-    return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
-
-  if (user && (showUserDetails || !hasUserDetails)) {
-    return <UserDetailsScreen onComplete={() => {
-      setShowUserDetails(false);
-      setHasUserDetails(true);
-    }} />;
-  }
-
   // User is authenticated and has details, show the tab navigator
   return (
-    <NavigationContainer>
-      <Tab.Navigator
-        screenOptions={({ route }) => ({
-          tabBarIcon: ({ focused, color, size }) => {
-            let iconName;
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <NavigationContainer>
+        <Tab.Navigator
+          screenOptions={({ route }) => ({
+            tabBarIcon: ({ focused, color, size }) => {
+              let iconName;
 
-            if (route.name === 'Schedules') {
-              iconName = focused ? 'calendar' : 'calendar-outline';
-            } else if (route.name === 'Chat') {
-              iconName = focused ? 'chatbubble' : 'chatbubble-outline';
-            } else if (route.name === 'Availability') {
-              iconName = focused ? 'people' : 'people-outline';
-            } else if (route.name === 'Forms') {
-              iconName = focused ? 'document-text' : 'document-text-outline';
-            } else if (route.name === 'Profile') {
-              iconName = focused ? 'person' : 'person-outline';
-            }
-            // You can use any component here - we're using Ionicons
-            return <Ionicons name={iconName} size={size} color={color} />;
-          },
-          tabBarActiveTintColor: COLORS.primary,
-          tabBarInactiveTintColor: 'gray',
-          tabBarLabelStyle: {
-            fontSize: 12,
-            fontWeight: '500',
-          },
-          tabBarStyle: {
-            backgroundColor: COLORS.secondary,
-            borderTopColor: 'rgba(0, 0, 0, 0.1)',
-            position: 'absolute',
-            bottom: 0,
-            padding: 0,
-            height: 50,
-            zIndex: 8,
-            elevation: 4,
-          },
-          headerShown: false,
-          tabBarHideOnKeyboard: true,
-          keyboardHidesTabBar: true,
-        })}
-      >
-       <Tab.Screen name="Schedules" component={PreviewScreen} />
-       <Tab.Screen name="Availability" component={FacultyAvailabilityScreen} />
-      <Tab.Screen name="Chat" component={ChatBotScreen} />
-      <Tab.Screen name="Forms" component={FormsScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
-      </Tab.Navigator>
-    </NavigationContainer>
+              if (route.name === 'Schedules') {
+                iconName = focused ? 'calendar' : 'calendar-outline';
+              } else if (route.name === 'Availability') {
+                iconName = focused ? 'people' : 'people-outline';
+              } else if (route.name === 'Chat') {
+                iconName = focused ? 'chatbubble' : 'chatbubble-outline';
+              } else if (route.name === 'Forms') {
+                iconName = focused ? 'document-text' : 'document-text-outline';
+              } else if (route.name === 'Profile') {
+                iconName = focused ? 'person' : 'person-outline';
+              }
+              
+              return <Ionicons name={iconName} size={size} color={color} />;
+            },
+            tabBarActiveTintColor: COLORS.primary,
+            tabBarInactiveTintColor: 'gray',
+            tabBarLabelStyle: {
+              fontSize: 12,
+              fontWeight: '500',
+            },
+            tabBarStyle: {
+              backgroundColor: COLORS.secondary,
+              borderTopColor: 'rgba(0, 0, 0, 0.1)',
+              padding: 0,
+              height: 50,
+              elevation: 4,
+            },
+            headerShown: false,
+            tabBarHideOnKeyboard: true,
+          })}
+        >
+          <Tab.Screen name="Schedules" component={PreviewScreen} />
+          <Tab.Screen name="Availability" component={FacultyAvailabilityScreen} />
+          <Tab.Screen name="Chat" component={ChatBotScreen} />
+          <Tab.Screen name="Forms" component={FormsScreen} />
+          <Tab.Screen name="Profile">
+            {(props) => <ProfileScreen {...props} onUserUpdate={setUser} />}
+          </Tab.Screen>
+        </Tab.Navigator>
+      </NavigationContainer>
+    </GestureHandlerRootView>
   );
 }
 
@@ -697,41 +550,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 40,
-    transform: [{ scale: 1 }],
-  },
-  loadingContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: COLORS.primary,
-  },
-  headerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.secondary,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: COLORS.text,
-    opacity: 0.8,
-    marginBottom: 40,
-    textAlign: 'center',
-    letterSpacing: 0.5,
   },
   scrollContainer: {
     flexGrow: 1,
@@ -748,25 +566,29 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
-  backgroundPattern: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    opacity: 0.1,
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  logo: {
-    width: 200,
-    height: 200,
-    marginBottom: 30,
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: COLORS.primary,
   },
   welcomeText: {
-    paddingTop:100,
+    paddingTop: 100,
     fontSize: 28,
     fontWeight: 'bold',
     color: COLORS.primary,
     marginBottom: 8,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    color: COLORS.text,
+    opacity: 0.8,
+    marginBottom: 40,
     textAlign: 'center',
     letterSpacing: 0.5,
   },
