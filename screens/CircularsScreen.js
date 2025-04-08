@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,170 +18,318 @@ import { COLORS } from '../constants/Colors';
 const CircularsScreen = () => {
   const [circulars, setCirculars] = useState([]);
   const [originalData, setOriginalData] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true); // Track initial loading separately
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortType, setSortType] = useState('date'); // 'date' or 'name'
-  const [sortOrder, setSortOrder] = useState('desc'); // 'asc' or 'desc'
+  const [sortType, setSortType] = useState('date');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const isMounted = useRef(true);
+  const fetchControllerRef = useRef(null);
+  const hasData = useRef(false);
+  const lastActivityRef = useRef(Date.now());
+  const activityTimerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+      if (fetchControllerRef.current) {
+        fetchControllerRef.current.abort();
+      }
+      if (activityTimerRef.current) {
+        clearTimeout(activityTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     fetchCirculars();
   }, []);
 
-  // Process and sort data whenever search query or sort options change
-  useEffect(() => {
-    processAndSortCirculars(originalData);
-  }, [searchQuery, sortType, sortOrder]);
-
-  const fetchCirculars = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('https://faculty-availability-api.onrender.com/stream-circulars');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const text = await response.text();
-      const lines = text.split('\n').filter(line => line.trim());
-      const files = lines.map(line => {
-        try {
-          const parsedLine = JSON.parse(line);
-          if (!parsedLine.filename || !parsedLine.url || !parsedLine.date || !parsedLine.month) {
-            console.error('Missing required fields in line:', line);
-            return null;
-          }
-          return parsedLine;
-        } catch (parseError) {
-          console.error('JSON Parse error for line:', line, parseError);
-          return null;
-        }
-      }).filter(item => item !== null);
-      const formattedCirculars = files.map(file => ({
-        filename: file.filename || 'Unknown File',
-        url: file.url || '',
-        date: file.date || 'Unknown Date',
-        month: file.month || 'Unknown Month'
-      }));
-      
-      // Store original data for filtering
-      setOriginalData(formattedCirculars);
-      processAndSortCirculars(formattedCirculars);
-    } catch (error) {
-      console.error('Error fetching circulars:', error);
-      Alert.alert('Error', 'Failed to load circulars. Please try again later.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const processAndSortCirculars = (data) => {
-    // Ensure we have valid data to process
+  // Memoize the processAndSortCirculars function to prevent unnecessary executions
+  const processAndSortCirculars = useCallback((data) => {
     if (!data || !Array.isArray(data) || data.length === 0) {
       setCirculars([]);
       return;
     }
 
-    // Apply search filter
-    let filteredData = data.filter(item =>
-      item.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.date.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.month.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    // Filter based on search query
+    let filteredData = data;
+    if (searchQuery) {
+      filteredData = data.filter(item =>
+        item.filename?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.date?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.month?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
 
-    // Sort the filtered data
-    const sortedData = [...filteredData].sort((a, b) => {
-      if (sortType === 'date') {
-        const monthOrder = {
-          'January': 1, 'February': 2, 'March': 3, 'April': 4,
-          'May': 5, 'June': 6, 'July': 7, 'August': 8,
-          'September': 9, 'October': 10, 'November': 11, 'December': 12
-        };
+    // Define month order for proper sorting
+    const monthOrder = {
+      'January': 1, 'February': 2, 'March': 3, 'April': 4,
+      'May': 5, 'June': 6, 'July': 7, 'August': 8,
+      'September': 9, 'October': 10, 'November': 11, 'December': 12
+    };
+
+    // Group and sort data
+    if (sortType === 'date') {
+      // Group by month and year
+      const grouped = {};
+      
+      filteredData.forEach(item => {
+        if (!item.date || !item.month) return;
         
-        const yearA = new Date(a.date).getFullYear();
-        const yearB = new Date(b.date).getFullYear();
-        const monthA = monthOrder[a.month];
-        const monthB = monthOrder[b.month];
-        const dayA = new Date(a.date).getDate();
-        const dayB = new Date(b.date).getDate();
-
-        // First compare by year
-        if (yearA !== yearB) {
-          return sortOrder === 'asc' ? yearA - yearB : yearB - yearA;
+        const month = item.month;
+        const dateParts = item.date.split('/');
+        const year = dateParts.length === 3 ? parseInt(dateParts[2]) : new Date().getFullYear();
+        const key = `${year} ${month}`;
+        
+        if (!grouped[key]) {
+          grouped[key] = {
+            title: `${month} ${year}`,
+            month: month,
+            year: year,
+            data: []
+          };
         }
-        // Then by month
-        if (monthA !== monthB) {
-          return sortOrder === 'asc' ? monthA - monthB : monthB - monthA;
+        
+        grouped[key].data.push(item);
+      });
+      
+      // Sort items within each month group - most recent dates first
+      Object.values(grouped).forEach(group => {
+        group.data.sort((a, b) => {
+          // Convert DD/MM/YYYY to Date objects
+          const [dayA, monthA, yearA] = a.date.split('/').map(Number);
+          const [dayB, monthB, yearB] = b.date.split('/').map(Number);
+          
+          const dateA = new Date(yearA, monthA - 1, dayA);
+          const dateB = new Date(yearB, monthB - 1, dayB);
+          
+          return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+        });
+      });
+      
+      // Convert to array and sort months
+      const result = Object.values(grouped);
+      result.sort((a, b) => {
+        if (a.year !== b.year) {
+          return sortOrder === 'desc' ? b.year - a.year : a.year - b.year;
         }
-        // Then by day
-        return sortOrder === 'asc' ? dayA - dayB : dayB - dayA;
-      } else {
+        return sortOrder === 'desc' 
+          ? monthOrder[b.month] - monthOrder[a.month]
+          : monthOrder[a.month] - monthOrder[b.month];
+      });
+      
+      setCirculars(result);
+    } else {
+      // Sort and group by name
+      const sortedData = [...filteredData].sort((a, b) => {
         const nameA = a.filename.toLowerCase();
         const nameB = b.filename.toLowerCase();
-        return sortOrder === 'asc'
-          ? nameA.localeCompare(nameB)
-          : nameB.localeCompare(nameA);
-      }
-    });
+        return sortOrder === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+      });
 
-    // Group by month if sorting by date, or by first letter if sorting by name
-    if (sortType === 'date') {
-      const groupedByMonth = sortedData.reduce((acc, current) => {
-        const month = current.month;
-        if (!acc[month]) {
-          acc[month] = [];
-        }
-        acc[month].push(current);
-        return acc;
-      }, {});
-
-      const sections = Object.keys(groupedByMonth)
-        .sort((a, b) => {
-          const monthOrder = {
-            'January': 1, 'February': 2, 'March': 3, 'April': 4,
-            'May': 5, 'June': 6, 'July': 7, 'August': 8,
-            'September': 9, 'October': 10, 'November': 11, 'December': 12
+      // Group by first letter
+      const grouped = {};
+      sortedData.forEach(item => {
+        if (!item.filename) return;
+        const letter = item.filename[0].toUpperCase();
+        if (!grouped[letter]) {
+          grouped[letter] = {
+            title: letter,
+            data: []
           };
-          return sortOrder === 'asc' ? monthOrder[a] - monthOrder[b] : monthOrder[b] - monthOrder[a];
-        })
-        .map(month => ({
-          title: month,
-          data: groupedByMonth[month]
-        }));
-
-      setCirculars(sections);
-    } else {
-      // Group by first letter when sorting by name
-      const groupedByLetter = sortedData.reduce((acc, current) => {
-        const firstLetter = current.filename.charAt(0).toUpperCase();
-        if (!acc[firstLetter]) {
-          acc[firstLetter] = [];
         }
-        acc[firstLetter].push(current);
-        return acc;
-      }, {});
+        grouped[letter].data.push(item);
+      });
 
-      const sections = Object.keys(groupedByLetter)
-        .sort((a, b) => sortOrder === 'asc' ? a.localeCompare(b) : b.localeCompare(a))
-        .map(letter => ({
-          title: letter,
-          data: groupedByLetter[letter]
-        }));
+      // Convert to array and sort alphabetically
+      const result = Object.values(grouped);
+      result.sort((a, b) => {
+        return sortOrder === 'asc' 
+          ? a.title.localeCompare(b.title) 
+          : b.title.localeCompare(a.title);
+      });
+      
+      setCirculars(result);
+    }
+  }, [searchQuery, sortType, sortOrder]);
 
-      setCirculars(sections);
+  // Run processing whenever dependencies change
+  useEffect(() => {
+    processAndSortCirculars(originalData);
+  }, [originalData, searchQuery, sortType, sortOrder, processAndSortCirculars]);
+
+  // Function to handle SSE data parsing
+  const handleSSEData = (data) => {
+    // Reset activity timer
+    lastActivityRef.current = Date.now();
+    
+    // Update our data state
+    if (data.message === 'No files found in Circulars/') {
+      console.log('No files found message received');
+      setLoading(false);
+      setInitialLoading(false);
+      return;
+    }
+    
+    if (data.filename && data.url && data.date && data.month) {
+      console.log('Received data:', data.filename);
+      hasData.current = true;
+      
+      setOriginalData(prev => [...prev, data]);
+      setLoadingProgress(prev => prev + 1);
+      
+      // After receiving first data, remove initial loading overlay
+      if (initialLoading) {
+        setInitialLoading(false);
+      }
     }
   };
 
-  const toggleSortType = () => {
-    const newSortType = sortType === 'date' ? 'name' : 'date';
-    setSortType(newSortType);
+  // Check if stream is inactive (no new data for a while)
+  const checkStreamActivity = () => {
+    const now = Date.now();
+    const elapsed = now - lastActivityRef.current;
+    
+    // If no activity for 3 seconds, consider stream complete
+    if (elapsed > 3000 && isMounted.current) {
+      console.log('Stream appears complete (no activity for 3 seconds)');
+      setLoading(false);
+      return;
+    }
+    
+    // Otherwise, check again soon
+    activityTimerRef.current = setTimeout(checkStreamActivity, 1000);
   };
 
-  const toggleSortOrder = () => {
-    const newSortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
-    setSortOrder(newSortOrder);
+  const fetchCirculars = () => {
+    setLoading(true);
+    setInitialLoading(true);
+    setLoadingProgress(0);
+    setOriginalData([]);
+    hasData.current = false;
+    lastActivityRef.current = Date.now();
+    
+    // Clear any existing timers
+    if (activityTimerRef.current) {
+      clearTimeout(activityTimerRef.current);
+    }
+    
+    // Abort any ongoing fetch
+    if (fetchControllerRef.current) {
+      fetchControllerRef.current.abort();
+    }
+    
+    // Create new AbortController
+    const controller = new AbortController();
+    fetchControllerRef.current = controller;
+    
+    // Set timeout for slow connections
+    const loadingTimeout = setTimeout(() => {
+      if (isMounted.current && !hasData.current) {
+        controller.abort();
+        setLoading(false);
+        setInitialLoading(false);
+        Alert.alert('Error', 'Taking too long to load. Please check your connection.');
+      }
+    }, 20000);
+
+    // Use fetch with text processing for SSE
+    fetch('https://faculty-availability-api.onrender.com/stream-circulars', {
+      method: 'GET',
+      signal: controller.signal
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      
+      // Start checking for stream inactivity
+      activityTimerRef.current = setTimeout(checkStreamActivity, 1000);
+      
+      // React Native doesn't support response.body.getReader(),
+      // so we use response.text() with a different approach
+      let buffer = '';
+      
+      // Set up streaming with a recursive function
+      const processStream = (text) => {
+        if (!isMounted.current || controller.signal.aborted) return;
+        
+        // Process the received text
+        const lines = text.split('\n\n');
+        
+        lines.forEach(line => {
+          if (line.trim() && line.startsWith('data: ')) {
+            try {
+              const jsonStr = line.substring(6).trim(); // Remove "data: " prefix
+              const data = JSON.parse(jsonStr);
+              
+              // Process the SSE data
+              handleSSEData(data);
+            } catch (e) {
+              console.error('Parse error:', e, 'on line:', line);
+            }
+          }
+        });
+      };
+      
+      // Use fetch streaming technique specifically for React Native
+      const reader = response.body._readableState;
+      response.text().then(text => {
+        // Process the entire response text as SSE format
+        const events = text.split('\n\n').filter(event => 
+          event.trim() && event.startsWith('data: ')
+        );
+        
+        // Process each event
+        events.forEach((event, index) => {
+          setTimeout(() => {
+            if (!isMounted.current || controller.signal.aborted) return;
+            
+            try {
+              const jsonStr = event.substring(6).trim(); // Remove "data: " prefix
+              const data = JSON.parse(jsonStr);
+              handleSSEData(data);
+              
+              // If this is the last event, end the stream
+              if (index === events.length - 1) {
+                clearTimeout(loadingTimeout);
+                setLoading(false);
+              }
+            } catch (e) {
+              console.error('Parse error:', e);
+            }
+          }, index * 100); // Simulate streaming with delays
+        });
+        
+        // If no events, clear loading state
+        if (events.length === 0) {
+          clearTimeout(loadingTimeout);
+          setLoading(false);
+          setInitialLoading(false);
+        }
+      });
+    })
+    .catch(error => {
+      clearTimeout(loadingTimeout);
+      if (activityTimerRef.current) {
+        clearTimeout(activityTimerRef.current);
+      }
+      
+      if (isMounted.current && !controller.signal.aborted) {
+        console.error('Fetch error:', error);
+        setLoading(false);
+        setInitialLoading(false);
+        if (!hasData.current) {
+          Alert.alert('Error', 'Failed to load circulars. Please try again later.');
+        }
+      }
+    });
   };
 
-  const handleSearch = (text) => {
-    setSearchQuery(text);
-  };
+  const toggleSortType = () => setSortType(prev => prev === 'date' ? 'name' : 'date');
+  const toggleSortOrder = () => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
 
   const renderSectionHeader = ({ section }) => (
     <View style={styles.sectionHeader}>
@@ -205,46 +353,12 @@ const CircularsScreen = () => {
     </TouchableOpacity>
   );
 
-  const renderSearchBar = () => (
-    <View>
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search circulars..."
-        value={searchQuery}
-        onChangeText={handleSearch}
-        placeholderTextColor={COLORS.textSecondary}
-      />
-      {searchQuery.length > 0 && (
-        <TouchableOpacity 
-          style={styles.clearSearchButton} 
-          onPress={() => setSearchQuery('')}
-        >
-          <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
-        </TouchableOpacity>
-      )}
-      <View style={styles.sortOptions}>
-        <TouchableOpacity style={styles.sortButton} onPress={toggleSortType}>
-          <Ionicons 
-            name={sortType === 'date' ? 'calendar' : 'text'} 
-            size={20} 
-            color={COLORS.primary} 
-          />
-          <Text style={styles.sortButtonText}>
-            {sortType === 'date' ? 'Date' : 'Name'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.sortButton} onPress={toggleSortOrder}>
-          <Ionicons 
-            name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'} 
-            size={20} 
-            color={COLORS.primary} 
-          />
-          <Text style={styles.sortButtonText}>
-            {sortOrder === 'asc' ? 'Asc' : 'Desc'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+  const renderEmptyList = () => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="document-text-outline" size={60} color={COLORS.grey} />
+      <Text style={styles.emptyText}>
+        {searchQuery ? "No matching circulars" : "No circulars available"}
+      </Text>
     </View>
   );
 
@@ -259,34 +373,83 @@ const CircularsScreen = () => {
         <Text style={styles.headerSubtitle}>Latest updates and notifications</Text>
       </LinearGradient>
 
-      {renderSearchBar()}
+      <View>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search circulars..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholderTextColor={COLORS.textSecondary}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity 
+            style={styles.clearSearchButton} 
+            onPress={() => setSearchQuery('')}
+          >
+            <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+        )}
+        <View style={styles.sortOptions}>
+          <TouchableOpacity style={styles.sortButton} onPress={toggleSortType}>
+            <Ionicons 
+              name={sortType === 'date' ? 'calendar' : 'text'} 
+              size={20} 
+              color={COLORS.primary} 
+            />
+            <Text style={styles.sortButtonText}>
+              {sortType === 'date' ? 'Date' : 'Name'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.sortButton} onPress={toggleSortOrder}>
+            <Ionicons 
+              name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'} 
+              size={20} 
+              color={COLORS.primary} 
+            />
+            <Text style={styles.sortButtonText}>
+              {sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-      {loading ? (
+      {initialLoading ? (
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingIndicator}>
             <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={{marginTop: 10, color: COLORS.text}}>Loading circulars...</Text>
+            <Text style={{ marginTop: 10, color: COLORS.text }}>
+              {loadingProgress > 0 
+                ? `Loaded ${loadingProgress} items...` 
+                : 'Connecting to server...'}
+            </Text>
           </View>
         </View>
       ) : (
-        <SectionList
-          sections={circulars}
-          keyExtractor={(item, index) => item.url + index}
-          renderItem={renderItem}
-          renderSectionHeader={renderSectionHeader}
-          contentContainerStyle={styles.listContainer}
-          stickySectionHeadersEnabled={true}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="document-text-outline" size={60} color={COLORS.grey} />
-              <Text style={styles.emptyText}>
-                {searchQuery.length > 0 
-                  ? "No circulars match your search" 
-                  : "No circulars available"}
-              </Text>
+        <>
+          <SectionList
+            sections={circulars}
+            keyExtractor={(item, index) => `${item.url}-${index}`}
+            renderItem={renderItem}
+            renderSectionHeader={renderSectionHeader}
+            contentContainerStyle={styles.listContainer}
+            stickySectionHeadersEnabled={true}
+            ListEmptyComponent={renderEmptyList}
+          />
+          {loading && originalData.length > 0 && (
+            <View style={styles.streamingIndicator}>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={styles.streamingText}>Receiving updates... ({loadingProgress})</Text>
             </View>
-          }
-        />
+          )}
+          {!loading && originalData.length > 0 && (
+            <TouchableOpacity 
+              style={styles.refreshButton} 
+              onPress={fetchCirculars}
+            >
+              <Ionicons name="refresh" size={20} color="#fff" />
+            </TouchableOpacity>
+          )}
+        </>
       )}
     </View>
   );
@@ -297,9 +460,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  // Updated header styles from the provided code
   header: {
-    paddingTop: Platform.OS === 'ios' ? 48 : StatusBar.currentHeight-25,
+    paddingTop: Platform.OS === 'ios' ? 48 : StatusBar.currentHeight + 10,
     paddingBottom: 16,
     paddingHorizontal: 20,
     alignItems: 'center',
@@ -314,41 +476,29 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.secondary,
     marginBottom: 4,
-    textShadowColor: 'rgba(0, 0, 0, 0.2)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
   },
   headerSubtitle: {
     fontSize: 16,
     color: COLORS.secondary,
     opacity: 0.9,
-    textAlignHorizontal: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.1)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 1,
   },
-  // Updated search input styles from the provided code
   searchInput: {
     backgroundColor: COLORS.secondary,
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginHorizontal: 10,
+    padding: 16,
+    margin: 10,
     marginTop: 16,
-    marginBottom: 8,
     fontSize: 16,
     color: COLORS.text,
     shadowColor: COLORS.shadow,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
     elevation: 2,
   },
   clearSearchButton: {
     position: 'absolute',
     right: 26,
     top: 28,
-    zIndex: 1,
   },
   sortOptions: {
     flexDirection: 'row',
@@ -360,8 +510,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.primaryLight + '10',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    padding: 8,
     borderRadius: 20,
     marginLeft: 10,
   },
@@ -371,9 +520,9 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     fontWeight: '600',
   },
-  // Keeping original list container styles
   listContainer: {
     padding: 14,
+    flexGrow: 1,
   },
   circularCard: {
     flexDirection: 'row',
@@ -385,7 +534,6 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
     elevation: 2,
   },
   iconContainer: {
@@ -406,12 +554,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.text,
     marginBottom: 4,
-    letterSpacing: 0.1,
   },
   circularDate: {
     fontSize: 14,
     color: COLORS.textSecondary,
-    letterSpacing: 0.1,
   },
   sectionHeader: {
     backgroundColor: '#e9ecef',
@@ -424,40 +570,63 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.primary,
   },
-  // Updated loading overlay styles from the provided code
   loadingOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    zIndex: 999,
   },
   loadingIndicator: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 4,
     alignItems: 'center',
+    elevation: 4,
   },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 40,
+    minHeight: 300,
   },
   emptyText: {
     marginTop: 10,
     fontSize: 16,
     color: COLORS.grey,
-    textAlign: 'center',
   },
+  streamingIndicator: {
+    position: 'absolute',
+    bottom: 20,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    padding: 12,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 3,
+  },
+  streamingText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: COLORS.text,
+    fontWeight: '500',
+  },
+  refreshButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    backgroundColor: COLORS.primary,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+  }
 });
 
 export default CircularsScreen;
