@@ -35,144 +35,41 @@ const CircularsScreen = () => {
   const fetchCirculars = async () => {
     try {
       setLoading(true);
-      
       const response = await fetch('https://faculty-availability-api.onrender.com/stream-circulars');
-  
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-  
-      if (!response.body) {
-        const text = await response.text();
-        processTextResponse(text);
-        return;
-      }
-  
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-  
-      let liveCirculars = [];
-  
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          if (buffer.trim()) {
-            liveCirculars = processStreamChunk(buffer, liveCirculars);
+      const text = await response.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      const files = lines.map(line => {
+        try {
+          const parsedLine = JSON.parse(line);
+          if (!parsedLine.filename || !parsedLine.url || !parsedLine.date || !parsedLine.month) {
+            console.error('Missing required fields in line:', line);
+            return null;
           }
-          break;
-        }
-  
-        const chunk = decoder.decode(value, { stream: true });
-        buffer += chunk;
-  
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-  
-        for (const line of lines) {
-          try {
-            const parsedLine = JSON.parse(line);
-  
-            if (
-              !parsedLine.filename ||
-              !parsedLine.url ||
-              !parsedLine.date ||
-              !parsedLine.month
-            ) {
-              console.error('Invalid circular data:', parsedLine);
-              continue;
-            }
-  
-            const circular = {
-              filename: parsedLine.filename,
-              url: parsedLine.url,
-              date: parsedLine.date,
-              month: parsedLine.month
-            };
-  
-            liveCirculars.push(circular);
-  
-            // Real-time update!
-            setOriginalData((prev) => [...prev, circular]);
-            setCirculars((prev) => processAndSortCirculars([...prev, circular]));
-  
-          } catch (err) {
-            console.error('Error parsing streamed line:', line, err);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Stream fetch error:', error);
-      Alert.alert('Error', 'Unable to stream circulars. Try again later.');
-    } finally {
-    setLoading(false);
-    }
-  };
-  
-  
-  // Helper function to process text response (non-streaming fallback)
-  const processTextResponse = (text) => {
-    const lines = text.split('\n').filter(line => line.trim());
-    const files = lines.map(line => {
-      try {
-        const parsedLine = JSON.parse(line);
-        if (!parsedLine.filename || !parsedLine.url || !parsedLine.date || !parsedLine.month) {
-          console.error('Missing required fields in line:', line);
+          return parsedLine;
+        } catch (parseError) {
+          console.error('JSON Parse error for line:', line, parseError);
           return null;
         }
-        return parsedLine;
-      } catch (parseError) {
-        console.error('JSON Parse error for line:', line, parseError);
-        return null;
-      }
-    }).filter(item => item !== null);
-    
-    const formattedCirculars = files.map(file => ({
-      filename: file.filename || 'Unknown File',
-      url: file.url || '',
-      date: file.date || 'Unknown Date',
-      month: file.month || 'Unknown Month'
-    }));
-    
-    // Store original data for filtering
-    setOriginalData(formattedCirculars);
-    processAndSortCirculars(formattedCirculars);
-  };
-  
-  // Helper function to process stream chunks
-  const processStreamChunk = (chunk, currentCirculars) => {
-    const lines = chunk.split('\n').filter(line => line.trim());
-    const newCirculars = [...currentCirculars];
-    
-    for (const line of lines) {
-      try {
-        const parsedLine = JSON.parse(line);
-        
-        if (!parsedLine.filename || !parsedLine.url || !parsedLine.date || !parsedLine.month) {
-          console.error('Missing required fields in line:', line);
-          continue;
-        }
-        
-        const circular = {
-          filename: parsedLine.filename || 'Unknown File',
-          url: parsedLine.url || '',
-          date: parsedLine.date || 'Unknown Date',
-          month: parsedLine.month || 'Unknown Month'
-        };
-        
-        newCirculars.push(circular);
-      } catch (parseError) {
-        console.error('JSON Parse error for line:', line, parseError);
-      }
+      }).filter(item => item !== null);
+      const formattedCirculars = files.map(file => ({
+        filename: file.filename || 'Unknown File',
+        url: file.url || '',
+        date: file.date || 'Unknown Date',
+        month: file.month || 'Unknown Month'
+      }));
+      
+      // Store original data for filtering
+      setOriginalData(formattedCirculars);
+      processAndSortCirculars(formattedCirculars);
+    } catch (error) {
+      console.error('Error fetching circulars:', error);
+      Alert.alert('Error', 'Failed to load circulars. Please try again later.');
+    } finally {
+      setLoading(false);
     }
-    
-    // Update state with new circulars if we have any
-    if (newCirculars.length > currentCirculars.length) {
-      setOriginalData(newCirculars);
-      processAndSortCirculars(newCirculars);
-    }
-    
-    return newCirculars;
   };
 
   const processAndSortCirculars = (data) => {
@@ -400,6 +297,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  // Updated header styles from the provided code
   header: {
     paddingTop: Platform.OS === 'ios' ? 48 : StatusBar.currentHeight-25,
     paddingBottom: 16,
@@ -429,6 +327,7 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 1,
   },
+  // Updated search input styles from the provided code
   searchInput: {
     backgroundColor: COLORS.secondary,
     borderRadius: 12,
@@ -472,6 +371,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     fontWeight: '600',
   },
+  // Keeping original list container styles
   listContainer: {
     padding: 14,
   },
@@ -524,6 +424,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.primary,
   },
+  // Updated loading overlay styles from the provided code
   loadingOverlay: {
     position: 'absolute',
     left: 0,

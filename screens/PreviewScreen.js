@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFocusEffect } from '@react-navigation/native';
 import ImageViewer from 'react-native-image-zoom-viewer';
+import { getCachedImages } from './UserDetailsScreen'; // Adjust the path as needed
 
 const COLORS = {
   primary: '#1e40af',
@@ -35,26 +36,28 @@ const PreviewScreen = () => {
   const loadImages = async () => {
     try {
       console.log('Starting to load cached images');
-      const [timetable, calendar] = await Promise.all([
-        AsyncStorage.getItem('timeTableUri'),
-        AsyncStorage.getItem('calendarUri')
-      ]);
-
+      
+      // Import the getCachedImages function at the top of your file
+      // Add import statement: import { getCachedImages } from './path-to-first-file';
+      
+      // Use the helper function from the first file
+      const { timeTableUri, calendarUri } = await getCachedImages();
+      
       console.log('Cache status:', {
-        hasTimetable: !!timetable,
-        hasCalendar: !!calendar
+        hasTimetable: !!timeTableUri,
+        hasCalendar: !!calendarUri
       });
-
-      if (timetable) {
-        console.log('Setting timetable URI:', timetable.substring(0, 50) + '...');
-        setTimetableUri(timetable);
+  
+      if (timeTableUri) {
+        console.log('Setting timetable URI:', timeTableUri.substring(0, 50) + '...');
+        setTimetableUri(timeTableUri);
       } else {
         console.warn('No timetable found in cache');
       }
-
-      if (calendar) {
-        console.log('Setting calendar URI:', calendar.substring(0, 50) + '...');
-        setCalendarUri(calendar);
+  
+      if (calendarUri) {
+        console.log('Setting calendar URI:', calendarUri.substring(0, 50) + '...');
+        setCalendarUri(calendarUri);
       } else {
         console.warn('No calendar found in cache');
       }
@@ -69,7 +72,6 @@ const PreviewScreen = () => {
       );
     }
   };
-
   const isPdfFile = (uri) => {
     return uri && uri.toLowerCase().endsWith('.pdf');
   };

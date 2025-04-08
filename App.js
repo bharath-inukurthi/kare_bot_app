@@ -43,6 +43,7 @@ import FormsScreen from './screens/FormsScreen';
 import UserDetailsScreen from './screens/UserDetailsScreen';
 import PreviewScreen from './screens/PreviewScreen';
 import CircularsScreen from './screens/CircularsScreen';
+import CertificatesScreen from './screens/CertificatesScreen';
 
 // Prevents multiple web popup instances
 WebBrowser.maybeCompleteAuthSession();
@@ -513,6 +514,8 @@ export default function App() {
                 iconName = focused ? 'document-text' : 'document-text-outline';
               } else if (route.name === 'Profile') {
                 iconName = focused ? 'person' : 'person-outline';
+              } else if (route.name === 'Certificates') {
+                iconName = focused ? 'document-text' : 'document-text-outline';
               }
               
               return <Ionicons name={iconName} size={size} color={color} />;
@@ -539,6 +542,7 @@ export default function App() {
           <Tab.Screen name="Chat" component={ChatBotScreen} />
           <Tab.Screen name="Forms" component={FormsScreen} />
           <Tab.Screen name="Circulars" component={CircularsScreen} />
+          <Tab.Screen name="Certificates" component={CertificatesScreen} />
           <Tab.Screen name="Profile">
             {(props) => <ProfileScreen {...props} onUserUpdate={setUser} />}
           </Tab.Screen>

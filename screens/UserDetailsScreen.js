@@ -30,19 +30,46 @@ const COLORS = {
 };
 
 // Generate section options from S01 to S30
-const SECTION_OPTIONS = Array.from({length: 30}, (_, i) => `S${String(i + 1).padStart(2, '0')}`);const SEMESTER_OPTIONS = ['Odd', 'Even'];
+const SECTION_OPTIONS = Array.from({length: 30}, (_, i) => `S${String(i + 1).padStart(2, '0')}`);
+const SEMESTER_OPTIONS = ['Odd', 'Even'];
 const YEAR_OPTIONS = ['II', 'III'];
 
-// Helper function to process and cache images
-const processAndCacheImage = async (imageUrl, storageKey) => {
+// Create a protected directory that won't be cleared by cleaner apps
+const PROTECTED_DIRECTORY = FileSystem.documentDirectory + 'protected_data/';
+
+// Helper function to ensure the protected directory exists
+const ensureProtectedDirectory = async () => {
+  try {
+    const dirInfo = await FileSystem.getInfoAsync(PROTECTED_DIRECTORY);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(PROTECTED_DIRECTORY, { intermediates: true });
+      console.log('Created protected directory:', PROTECTED_DIRECTORY);
+    }
+    return true;
+  } catch (error) {
+    console.error('Failed to create protected directory:', error);
+    return false;
+  }
+};
+
+// Helper function to process and store images in protected storage
+const processAndStoreImage = async (imageUrl, storageKey) => {
     try {
-        // Download image to cache
-        const cacheFilePath = `${FileSystem.cacheDirectory}${storageKey}_${Date.now()}.jpg`;
-        await FileSystem.downloadAsync(imageUrl, cacheFilePath);
+        // Ensure protected directory exists
+        await ensureProtectedDirectory();
+        
+        // Create a temporary file path for downloading
+        const tempFilePath = `${FileSystem.cacheDirectory}temp_${Date.now()}.jpg`;
+        
+        // Download image to temp location
+        const downloadResult = await FileSystem.downloadAsync(imageUrl, tempFilePath);
+        if (downloadResult.status !== 200) {
+            throw new Error(`Download failed with status ${downloadResult.status}`);
+        }
 
         // Process the image with optimal quality settings
         const manipulateResult = await manipulateAsync(
-            cacheFilePath,
+            tempFilePath,
             [{
                 resize: {
                     width: 1200, // Reasonable size for mobile display
@@ -55,13 +82,63 @@ const processAndCacheImage = async (imageUrl, storageKey) => {
             }
         );
 
-        // Clean up the temporary downloaded file
-        await FileSystem.deleteAsync(cacheFilePath, { idempotent: true });
+        // Define the protected storage path for this image
+        const protectedFilePath = `${PROTECTED_DIRECTORY}${storageKey}_${Date.now()}.jpg`;
+        
+        // Move the processed image to protected storage
+        await FileSystem.moveAsync({
+            from: manipulateResult.uri,
+            to: protectedFilePath
+        });
 
-        return manipulateResult.uri;
+        // Clean up the temporary downloaded file
+        await FileSystem.deleteAsync(tempFilePath, { idempotent: true });
+
+        // Store the protected path in AsyncStorage for later retrieval
+        await AsyncStorage.setItem(storageKey, protectedFilePath);
+        
+        console.log(`Successfully stored ${storageKey} in protected directory`);
+        return protectedFilePath;
     } catch (error) {
-        console.error('Error processing image:', error);
+        console.error('Error processing and storing image:', error);
         throw new Error(`Image processing failed: ${error.message}`);
+    }
+};
+
+// Function to restore images from protected storage if available
+const restoreProtectedImages = async () => {
+    try {
+        // Check if the protected directory exists
+        const dirInfo = await FileSystem.getInfoAsync(PROTECTED_DIRECTORY);
+        if (!dirInfo.exists) {
+            console.log('Protected directory does not exist yet');
+            return false;
+        }
+        
+        // Get the stored file paths from AsyncStorage
+        const [timeTableUri, calendarUri] = await Promise.all([
+            AsyncStorage.getItem('timeTableUri'),
+            AsyncStorage.getItem('calendarUri')
+        ]);
+        
+        // Verify that these files actually exist in the filesystem
+        const verifyResults = await Promise.all([
+            timeTableUri ? FileSystem.getInfoAsync(timeTableUri) : { exists: false },
+            calendarUri ? FileSystem.getInfoAsync(calendarUri) : { exists: false }
+        ]);
+        
+        const [timeTableExists, calendarExists] = verifyResults.map(result => result.exists);
+        
+        console.log('Cache restoration check:', {
+            timeTableExists,
+            calendarExists
+        });
+        
+        // Return true if both files exist, false otherwise
+        return timeTableExists && calendarExists;
+    } catch (error) {
+        console.error('Error restoring protected images:', error);
+        return false;
     }
 };
 
@@ -71,12 +148,13 @@ export const fetchAndCacheTimeTable = async (yearValue, sectionValue, semesterVa
         console.log('Starting fetchAndCacheTimeTable:', { yearValue, sectionValue, semesterValue });
         const sectionNumber = sectionValue.substring(1);
 
-        // Check if images are already cached
-        const [cachedTimeTable, cachedCalendar] = await Promise.all([
-            AsyncStorage.getItem('timeTableUri'),
-            AsyncStorage.getItem('calendarUri')
-        ]);
-        console.log('Cache status:', { cachedTimeTable: !!cachedTimeTable, cachedCalendar: !!cachedCalendar });
+        // Check if we can restore from protected storage first
+        const restoredFromProtected = await restoreProtectedImages();
+        if (restoredFromProtected) {
+            console.log('Successfully restored images from protected storage');
+            // If we're here, the paths are already in AsyncStorage so we can just return
+            return;
+        }
 
         // Timetable file key
         const timetableKey = `Time-Tables/${yearValue}-year-S${sectionNumber}.jpg`;
@@ -111,15 +189,11 @@ export const fetchAndCacheTimeTable = async (yearValue, sectionValue, semesterVa
                         throw new Error(`No presigned URL available for ${fileKey}`);
                     }
 
-                    // Process and cache the image
-                    const processedImageUri = await processAndCacheImage(data.presigned_url, storageKey);
-                    console.log(`Successfully processed image for ${storageKey}`);
+                    // Process and store the image in protected storage
+                    const protectedImageUri = await processAndStoreImage(data.presigned_url, storageKey);
+                    console.log(`Successfully stored image for ${storageKey} at ${protectedImageUri}`);
                     
-                    // Save the processed image URI to AsyncStorage
-                    await AsyncStorage.setItem(storageKey, processedImageUri);
-                    console.log(`Successfully cached ${storageKey}`);
-                    
-                    return { success: true, storageKey };
+                    return { success: true, storageKey, uri: protectedImageUri };
                 } catch (error) {
                     console.error(`Error processing ${storageKey}:`, error.message);
                     // Throw the error to be caught by Promise.allSettled
@@ -148,6 +222,30 @@ export const fetchAndCacheTimeTable = async (yearValue, sectionValue, semesterVa
     }
 };
 
+// Helper function to get cached image URIs
+export const getCachedImages = async () => {
+    try {
+        // Get stored image paths from AsyncStorage
+        const [timeTableUri, calendarUri] = await Promise.all([
+            AsyncStorage.getItem('timeTableUri'),
+            AsyncStorage.getItem('calendarUri')
+        ]);
+        
+        // Verify files exist
+        const [timeTableInfo, calendarInfo] = await Promise.all([
+            timeTableUri ? FileSystem.getInfoAsync(timeTableUri) : { exists: false },
+            calendarUri ? FileSystem.getInfoAsync(calendarUri) : { exists: false }
+        ]);
+        
+        return {
+            timeTableUri: timeTableInfo.exists ? timeTableUri : null,
+            calendarUri: calendarInfo.exists ? calendarUri : null
+        };
+    } catch (error) {
+        console.error('Error getting cached images:', error);
+        return { timeTableUri: null, calendarUri: null };
+    }
+};
 
 const UserDetailsScreen = ({ navigation, onComplete }) => {
   const [section, setSection] = useState('');
@@ -156,9 +254,12 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
   const [showSectionModal, setShowSectionModal] = useState(false);
   const [showYearModal, setShowYearModal] = useState(false);
   const [showSemesterModal, setShowSemesterModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   React.useEffect(() => {
     loadUserDetails();
+    // Ensure protected directory exists on component mount
+    ensureProtectedDirectory();
   }, []);
 
   const loadUserDetails = async () => {
@@ -175,12 +276,14 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
     }
   };
 
- const saveUserDetails = async () => {
+  const saveUserDetails = async () => {
     try {
       if (!section.trim() || !year.trim() || !semester.trim()) {
         Alert.alert('Required Fields', 'Please fill in all fields');
         return;
       }
+
+      setIsLoading(true);
 
       const userDetails = {
         section: section.trim(),
@@ -189,7 +292,9 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
       };
 
       await AsyncStorage.setItem('userDetails', JSON.stringify(userDetails));
-      await fetchAndCacheTimeTable(year, section,semester);
+      await fetchAndCacheTimeTable(year, section, semester);
+      
+      setIsLoading(false);
       
       if (onComplete) {
         onComplete();
@@ -199,6 +304,7 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
         console.warn('Neither navigation nor onComplete callback provided');
       }
     } catch (error) {
+      setIsLoading(false);
       console.error('Error saving user details:', error);
       Alert.alert('Error', 'Failed to save user details. Please try again.');
     }
@@ -223,6 +329,7 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
             <TouchableOpacity
               style={[styles.dropdownButton, section && styles.dropdownButtonSelected]}
               onPress={() => setShowSectionModal(true)}
+              disabled={isLoading}
             >
               <Text style={[styles.dropdownButtonText, !section && styles.placeholderText]}>
                 {section || 'Select your section'}
@@ -235,6 +342,7 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
             <TouchableOpacity
               style={[styles.dropdownButton, year && styles.dropdownButtonSelected]}
               onPress={() => setShowYearModal(true)}
+              disabled={isLoading}
             >
               <Text style={[styles.dropdownButtonText, !year && styles.placeholderText]}>
                 {year || 'Select your year'}
@@ -247,6 +355,7 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
             <TouchableOpacity
               style={[styles.dropdownButton, semester && styles.dropdownButtonSelected]}
               onPress={() => setShowSemesterModal(true)}
+              disabled={isLoading}
             >
               <Text style={[styles.dropdownButtonText, !semester && styles.placeholderText]}>
                 {semester || 'Select your semester'}
@@ -351,10 +460,13 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
           </Modal>
 
           <TouchableOpacity
-            style={styles.submitButton}
+            style={[styles.submitButton, isLoading && styles.disabledButton]}
             onPress={saveUserDetails}
+            disabled={isLoading}
           >
-            <Text style={styles.submitButtonText}>Continue</Text>
+            <Text style={styles.submitButtonText}>
+              {isLoading ? 'Loading...' : 'Continue'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -477,6 +589,10 @@ const styles = StyleSheet.create({
     padding: 15,
     alignItems: 'center',
     marginTop: 10,
+  },
+  disabledButton: {
+    backgroundColor: COLORS.primaryLight,
+    opacity: 0.7,
   },
   submitButtonText: {
     color: COLORS.secondary,
