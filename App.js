@@ -42,6 +42,7 @@ import ProfileScreen from './screens/ProfileScreen';
 import FormsScreen from './screens/FormsScreen';
 import UserDetailsScreen from './screens/UserDetailsScreen';
 import PreviewScreen from './screens/PreviewScreen';
+import CircularsScreen from './screens/CircularsScreen';
 
 // Prevents multiple web popup instances
 WebBrowser.maybeCompleteAuthSession();
@@ -537,6 +538,7 @@ export default function App() {
           <Tab.Screen name="Availability" component={FacultyAvailabilityScreen} />
           <Tab.Screen name="Chat" component={ChatBotScreen} />
           <Tab.Screen name="Forms" component={FormsScreen} />
+          <Tab.Screen name="Circulars" component={CircularsScreen} />
           <Tab.Screen name="Profile">
             {(props) => <ProfileScreen {...props} onUserUpdate={setUser} />}
           </Tab.Screen>

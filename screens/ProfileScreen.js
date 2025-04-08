@@ -11,7 +11,8 @@ import {
   TextInput,
   Modal,
   Pressable,
-  Animated
+  Animated,
+  ActivityIndicator
 } from 'react-native';
 import { getAuth, signOut } from 'firebase/auth';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -35,6 +36,9 @@ const COLORS = {
 const ProfileScreen = () => {
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const scaleAnim = React.useRef(new Animated.Value(0.3)).current;
+  // Add loading animation refs
+  const loadingOpacity = React.useRef(new Animated.Value(0)).current;
+  const loadingScale = React.useRef(new Animated.Value(0)).current;
 
   const animateCredits = () => {
     Animated.parallel([
@@ -52,7 +56,22 @@ const ProfileScreen = () => {
     ]).start();
   };
   
-
+  // Add loading animation function
+  const animateLoading = (show) => {
+    Animated.parallel([
+      Animated.timing(loadingOpacity, {
+        toValue: show ? 1 : 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.spring(loadingScale, {
+        toValue: show ? 1 : 0,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      })
+    ]).start();
+  };
   
   const [user, setUser] = React.useState(null);
   const [isEditing, setIsEditing] = React.useState(false);
@@ -63,6 +82,8 @@ const ProfileScreen = () => {
   const [section, setSection] = React.useState('');
   const [year, setYear] = React.useState('');
   const [semester, setSemester] = React.useState('');
+  // Add loading state
+  const [isLoading, setIsLoading] = React.useState(false);
 
   // Generate section options from S01 to S30
   const SECTION_OPTIONS = Array.from({length: 30}, (_, i) => `S${String(i + 1).padStart(2, '0')}`);
@@ -72,6 +93,11 @@ const ProfileScreen = () => {
   React.useEffect(() => {
     loadUserData();
   }, []);
+
+  // Show or hide loading based on isLoading state
+  React.useEffect(() => {
+    animateLoading(isLoading);
+  }, [isLoading]);
 
   const loadUserData = async () => {
     try {
@@ -108,6 +134,9 @@ const ProfileScreen = () => {
         return;
       }
 
+      // Show loading indicator
+      setIsLoading(true);
+
       const userDetails = {
         section: section.trim(),
         year: year.trim(),
@@ -118,10 +147,16 @@ const ProfileScreen = () => {
       // Fetch and cache timetable after updating details
       console.log('Fetching timetable for:', year, section, semester);
       await fetchAndCacheTimeTable(year, section, semester);
-      setIsEditing(false);
-      Alert.alert('Success', 'Profile details updated successfully');
+      
+      // Simulate network delay for demonstration purposes (remove in production)
+      setTimeout(() => {
+        setIsLoading(false);
+        setIsEditing(false);
+        Alert.alert('Success', 'Profile details updated successfully');
+      }, 1500);
     } catch (error) {
       console.error('Error saving user details:', error);
+      setIsLoading(false);
       Alert.alert('Error', 'Failed to save profile details. Please try again.');
     }
   };
@@ -153,6 +188,7 @@ const ProfileScreen = () => {
   // Mock data for profile options
   const handleShowCredits = () => {
     setShowCreditsModal(true);
+    animateCredits(); // Make sure we start the credits animation
   };
 
   const profileOptions = [
@@ -248,11 +284,11 @@ const ProfileScreen = () => {
               animationType="slide"
               transparent={true}
               visible={isEditing}
-              onRequestClose={() => setIsEditing(false)}
+              onRequestClose={() => !isLoading && setIsEditing(false)}
             >
               <Pressable 
                 style={styles.modalOverlay}
-                onPress={() => setIsEditing(false)}
+                onPress={() => !isLoading && setIsEditing(false)}
               >
                 <View style={styles.modalContainer}>
                   <Text style={styles.modalTitle}>Edit Academic Details</Text>
@@ -262,7 +298,8 @@ const ProfileScreen = () => {
                       <Text style={styles.label}>Section</Text>
                       <TouchableOpacity
                         style={[styles.dropdownButton, section && styles.dropdownButtonSelected]}
-                        onPress={() => setShowSectionModal(true)}
+                        onPress={() => !isLoading && setShowSectionModal(true)}
+                        disabled={isLoading}
                       >
                         <Text style={[styles.dropdownButtonText, !section && styles.placeholderText]}>
                           {section || 'Select your section'}
@@ -274,7 +311,8 @@ const ProfileScreen = () => {
                       <Text style={styles.label}>Year</Text>
                       <TouchableOpacity
                         style={[styles.dropdownButton, year && styles.dropdownButtonSelected]}
-                        onPress={() => setShowYearModal(true)}
+                        onPress={() => !isLoading && setShowYearModal(true)}
+                        disabled={isLoading}
                       >
                         <Text style={[styles.dropdownButtonText, !year && styles.placeholderText]}>
                           {year || 'Select your year'}
@@ -286,7 +324,8 @@ const ProfileScreen = () => {
                       <Text style={styles.label}>Semester</Text>
                       <TouchableOpacity
                         style={[styles.dropdownButton, semester && styles.dropdownButtonSelected]}
-                        onPress={() => setShowSemesterModal(true)}
+                        onPress={() => !isLoading && setShowSemesterModal(true)}
+                        disabled={isLoading}
                       >
                         <Text style={[styles.dropdownButtonText, !semester && styles.placeholderText]}>
                           {semester || 'Select your semester'}
@@ -296,16 +335,34 @@ const ProfileScreen = () => {
   
                     <View style={styles.buttonContainer}>
                       <TouchableOpacity 
-                        style={styles.cancelButton}
-                        onPress={() => setIsEditing(false)}
+                        style={[styles.cancelButton, isLoading && styles.disabledButton]}
+                        onPress={() => !isLoading && setIsEditing(false)}
+                        disabled={isLoading}
                       >
                         <Text style={styles.cancelButtonText}>Cancel</Text>
                       </TouchableOpacity>
+                      
                       <TouchableOpacity 
-                        style={styles.saveButton}
-                        onPress={handleSaveDetails}
+                        style={[styles.saveButton, isLoading && styles.disabledButton]}
+                        onPress={!isLoading ? handleSaveDetails : null}
+                        disabled={isLoading}
                       >
-                        <Text style={styles.saveButtonText}>Save</Text>
+                        {isLoading ? (
+                          <Animated.View 
+                            style={{ 
+                              opacity: loadingOpacity, 
+                              transform: [{ scale: loadingScale }],
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <ActivityIndicator color={COLORS.secondary} />
+                            <Text style={[styles.saveButtonText, { marginLeft: 10 }]}>Saving...</Text>
+                          </Animated.View>
+                        ) : (
+                          <Text style={styles.saveButtonText}>Save</Text>
+                        )}
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -314,7 +371,7 @@ const ProfileScreen = () => {
             </Modal>
   
             <Modal
-              visible={showSectionModal}
+              visible={showSectionModal && !isLoading}
               transparent={true}
               animationType="fade"
               onRequestClose={() => setShowSectionModal(false)}
@@ -346,7 +403,7 @@ const ProfileScreen = () => {
             </Modal>
   
             <Modal
-              visible={showSemesterModal}
+              visible={showSemesterModal && !isLoading}
               transparent={true}
               animationType="fade"
               onRequestClose={() => setShowSemesterModal(false)}
@@ -378,7 +435,7 @@ const ProfileScreen = () => {
             </Modal>
   
             <Modal
-              visible={showYearModal}
+              visible={showYearModal && !isLoading}
               transparent={true}
               animationType="fade"
               onRequestClose={() => setShowYearModal(false)}
@@ -470,7 +527,7 @@ const ProfileScreen = () => {
   
             <TouchableOpacity 
               style={styles.optionItem}
-              onPress={() => setShowCreditsModal(true)}
+              onPress={handleShowCredits}
             >
               <View style={styles.optionIcon}>
                 <Text style={styles.optionIconText}>👨‍💻</Text>
@@ -481,28 +538,6 @@ const ProfileScreen = () => {
               </View>
             </TouchableOpacity>
           </View>
-  
-          <Modal
-            visible={showCreditsModal}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setShowCreditsModal(false)}
-          >
-            <Pressable 
-              style={styles.modalOverlay}
-              onPress={() => setShowCreditsModal(false)}
-            >
-              <View style={[styles.modalContent, styles.creditsModal]}>
-                <Text style={styles.creditsTitle}>Written & Directed by</Text>
-                <Text style={styles.creditsText}>Inukurthi Bharath Kumar</Text>
-                <Text style={styles.creditsText}>DR. K. Vignesh</Text>
-                
-                <Text style={[styles.creditsTitle, styles.specialThanks]}>Special Thanks to</Text>
-                <Text style={styles.creditsText}>MLSC Kare</Text>
-                <Text style={styles.creditsText}>GDG Kare</Text>
-              </View>
-            </Pressable>
-          </Modal>
           
           <TouchableOpacity 
             style={styles.signOutButton}
@@ -664,6 +699,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     alignItems: 'center',
+  },
+  disabledButton: {
+    opacity: 0.7,
   },
   cancelButtonText: {
     color: COLORS.text,
@@ -893,4 +931,3 @@ const styles = StyleSheet.create({
 });
 
 export default ProfileScreen;
- 
