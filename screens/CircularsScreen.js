@@ -9,35 +9,38 @@ import {
   Platform,
   StatusBar,
   SectionList,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Linking, Alert } from 'react-native';
 import { COLORS } from '../constants/Colors';
+import {fetch} from 'expo/fetch';
 
 const CircularsScreen = () => {
   const [circulars, setCirculars] = useState([]);
   const [originalData, setOriginalData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [initialLoading, setInitialLoading] = useState(true); // Track initial loading separately
+  const [initialLoading, setInitialLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortType, setSortType] = useState('date');
   const [sortOrder, setSortOrder] = useState('desc');
+  const [showFullScreenLoading, setShowFullScreenLoading] = useState(true);
+
+  // Animation value for loading indicator
+  const loadingOpacity = useRef(new Animated.Value(1)).current;
+
+  // Refs
   const isMounted = useRef(true);
   const fetchControllerRef = useRef(null);
-  const hasData = useRef(false);
-  const lastActivityRef = useRef(Date.now());
-  const activityTimerRef = useRef(null);
+  const receivedCount = useRef(0);
 
   useEffect(() => {
     return () => {
       isMounted.current = false;
       if (fetchControllerRef.current) {
         fetchControllerRef.current.abort();
-      }
-      if (activityTimerRef.current) {
-        clearTimeout(activityTimerRef.current);
       }
     };
   }, []);
@@ -74,15 +77,15 @@ const CircularsScreen = () => {
     if (sortType === 'date') {
       // Group by month and year
       const grouped = {};
-      
+
       filteredData.forEach(item => {
         if (!item.date || !item.month) return;
-        
+
         const month = item.month;
         const dateParts = item.date.split('/');
         const year = dateParts.length === 3 ? parseInt(dateParts[2]) : new Date().getFullYear();
         const key = `${year} ${month}`;
-        
+
         if (!grouped[key]) {
           grouped[key] = {
             title: `${month} ${year}`,
@@ -91,41 +94,41 @@ const CircularsScreen = () => {
             data: []
           };
         }
-        
+
         grouped[key].data.push(item);
       });
-      
+
       // Sort items within each month group - most recent dates first
       Object.values(grouped).forEach(group => {
         group.data.sort((a, b) => {
           // Convert DD/MM/YYYY to Date objects
           const [dayA, monthA, yearA] = a.date.split('/').map(Number);
           const [dayB, monthB, yearB] = b.date.split('/').map(Number);
-          
+
           const dateA = new Date(yearA, monthA - 1, dayA);
           const dateB = new Date(yearB, monthB - 1, dayB);
-          
+
           return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
         });
       });
-      
+
       // Convert to array and sort months
       const result = Object.values(grouped);
       result.sort((a, b) => {
         if (a.year !== b.year) {
           return sortOrder === 'desc' ? b.year - a.year : a.year - b.year;
         }
-        return sortOrder === 'desc' 
+        return sortOrder === 'desc'
           ? monthOrder[b.month] - monthOrder[a.month]
           : monthOrder[a.month] - monthOrder[b.month];
       });
-      
+
       setCirculars(result);
     } else {
       // Sort and group by name
       const sortedData = [...filteredData].sort((a, b) => {
-        const nameA = a.filename.toLowerCase();
-        const nameB = b.filename.toLowerCase();
+        const nameA = a.filename?.toLowerCase() || '';
+        const nameB = b.filename?.toLowerCase() || '';
         return sortOrder === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
       });
 
@@ -146,11 +149,11 @@ const CircularsScreen = () => {
       // Convert to array and sort alphabetically
       const result = Object.values(grouped);
       result.sort((a, b) => {
-        return sortOrder === 'asc' 
-          ? a.title.localeCompare(b.title) 
+        return sortOrder === 'asc'
+          ? a.title.localeCompare(b.title)
           : b.title.localeCompare(a.title);
       });
-      
+
       setCirculars(result);
     }
   }, [searchQuery, sortType, sortOrder]);
@@ -160,172 +163,123 @@ const CircularsScreen = () => {
     processAndSortCirculars(originalData);
   }, [originalData, searchQuery, sortType, sortOrder, processAndSortCirculars]);
 
-  // Function to handle SSE data parsing
-  const handleSSEData = (data) => {
-    // Reset activity timer
-    lastActivityRef.current = Date.now();
-    
-    // Update our data state
-    if (data.message === 'No files found in Circulars/') {
-      console.log('No files found message received');
-      setLoading(false);
-      setInitialLoading(false);
-      return;
-    }
-    
-    if (data.filename && data.url && data.date && data.month) {
-      console.log('Received data:', data.filename);
-      hasData.current = true;
-      
-      setOriginalData(prev => [...prev, data]);
-      setLoadingProgress(prev => prev + 1);
-      
-      // After receiving first data, remove initial loading overlay
-      if (initialLoading) {
-        setInitialLoading(false);
-      }
-    }
-  };
-
-  // Check if stream is inactive (no new data for a while)
-  const checkStreamActivity = () => {
-    const now = Date.now();
-    const elapsed = now - lastActivityRef.current;
-    
-    // If no activity for 3 seconds, consider stream complete
-    if (elapsed > 3000 && isMounted.current) {
-      console.log('Stream appears complete (no activity for 3 seconds)');
-      setLoading(false);
-      return;
-    }
-    
-    // Otherwise, check again soon
-    activityTimerRef.current = setTimeout(checkStreamActivity, 1000);
-  };
-
-  const fetchCirculars = () => {
+  const fetchCirculars = async () => {
     setLoading(true);
     setInitialLoading(true);
+    setShowFullScreenLoading(true);
     setLoadingProgress(0);
     setOriginalData([]);
-    hasData.current = false;
-    lastActivityRef.current = Date.now();
-    
-    // Clear any existing timers
-    if (activityTimerRef.current) {
-      clearTimeout(activityTimerRef.current);
-    }
-    
-    // Abort any ongoing fetch
+    receivedCount.current = 0;
+  
+    loadingOpacity.setValue(1);
+  
     if (fetchControllerRef.current) {
       fetchControllerRef.current.abort();
     }
-    
-    // Create new AbortController
+  
     const controller = new AbortController();
     fetchControllerRef.current = controller;
+  
     
-    // Set timeout for slow connections
-    const loadingTimeout = setTimeout(() => {
-      if (isMounted.current && !hasData.current) {
-        controller.abort();
-        setLoading(false);
-        setInitialLoading(false);
-        Alert.alert('Error', 'Taking too long to load. Please check your connection.');
+  
+    const apiUrl = `https://faculty-availability-api.onrender.com/stream-circulars?t=${Date.now()}`;
+  
+    try {
+      const response = await fetch(apiUrl, {
+        headers: {
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        },
+        signal: controller.signal
+      });
+  
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP error: ${response.status}`);
       }
-    }, 20000);
-
-    // Use fetch with text processing for SSE
-    fetch('https://faculty-availability-api.onrender.com/stream-circulars', {
-      method: 'GET',
-      signal: controller.signal
-    })
-    .then(response => {
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-      
-      // Start checking for stream inactivity
-      activityTimerRef.current = setTimeout(checkStreamActivity, 1000);
-      
-      // React Native doesn't support response.body.getReader(),
-      // so we use response.text() with a different approach
+  
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
       let buffer = '';
-      
-      // Set up streaming with a recursive function
-      const processStream = (text) => {
-        if (!isMounted.current || controller.signal.aborted) return;
-        
-        // Process the received text
-        const lines = text.split('\n\n');
-        
-        lines.forEach(line => {
-          if (line.trim() && line.startsWith('data: ')) {
+  
+      while (true) {
+        const { done, value } = await reader.read();
+  
+        if (done) break;
+  
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+  
+        for (let i = 0; i < lines.length - 1; i++) {
+          const line = lines[i].trim();
+          if (line.startsWith('data:')) {
             try {
-              const jsonStr = line.substring(6).trim(); // Remove "data: " prefix
-              const data = JSON.parse(jsonStr);
-              
-              // Process the SSE data
-              handleSSEData(data);
-            } catch (e) {
-              console.error('Parse error:', e, 'on line:', line);
+              const jsonStr = line.slice(5).trim(); // 'data:' is 5 chars
+              const json = JSON.parse(jsonStr);
+              handleNewItem(json);
+            } catch (err) {
+              console.warn('Error parsing line:', line);
             }
           }
-        });
-      };
-      
-      // Use fetch streaming technique specifically for React Native
-      const reader = response.body._readableState;
-      response.text().then(text => {
-        // Process the entire response text as SSE format
-        const events = text.split('\n\n').filter(event => 
-          event.trim() && event.startsWith('data: ')
-        );
-        
-        // Process each event
-        events.forEach((event, index) => {
-          setTimeout(() => {
-            if (!isMounted.current || controller.signal.aborted) return;
-            
-            try {
-              const jsonStr = event.substring(6).trim(); // Remove "data: " prefix
-              const data = JSON.parse(jsonStr);
-              handleSSEData(data);
-              
-              // If this is the last event, end the stream
-              if (index === events.length - 1) {
-                clearTimeout(loadingTimeout);
-                setLoading(false);
-              }
-            } catch (e) {
-              console.error('Parse error:', e);
-            }
-          }, index * 100); // Simulate streaming with delays
-        });
-        
-        // If no events, clear loading state
-        if (events.length === 0) {
-          clearTimeout(loadingTimeout);
-          setLoading(false);
-          setInitialLoading(false);
         }
-      });
-    })
-    .catch(error => {
-      clearTimeout(loadingTimeout);
-      if (activityTimerRef.current) {
-        clearTimeout(activityTimerRef.current);
+  
+        buffer = lines[lines.length - 1];
       }
-      
-      if (isMounted.current && !controller.signal.aborted) {
-        console.error('Fetch error:', error);
+  
+      clearTimeout(timeout);
+      setLoading(false);
+    } catch (err) {
+      clearTimeout(timeout);
+      if (!controller.signal.aborted && isMounted.current) {
+        console.error('Fetch error:', err.message);
         setLoading(false);
         setInitialLoading(false);
-        if (!hasData.current) {
-          Alert.alert('Error', 'Failed to load circulars. Please try again later.');
+        setShowFullScreenLoading(false);
+  
+        if (receivedCount.current === 0) {
+          Alert.alert('Fetch Failed', `${err.message}`, [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Retry', onPress: () => fetchCirculars() }
+          ]);
         }
       }
-    });
+    }
+  };
+  
+
+  const handleNewItem = (data) => {
+    // Increment received count
+    receivedCount.current += 1;
+    
+    // Ensure all required fields exist with defaults if missing
+    const processedData = {
+      filename: data.filename || 'Unnamed Document',
+      url: data.url || '',
+      date: data.date || 'Unknown Date',
+      month: data.month || 'Unknown Month',
+      ...data // Keep any other fields
+    };
+
+    // Add to original data
+    setOriginalData(prev => [...prev, processedData]);
+    setLoadingProgress(prev => prev + 1);
+
+    // After receiving first data, remove initial loading overlay
+    if (initialLoading && receivedCount.current >= 1) {
+      setInitialLoading(false);
+    }
+
+    // After receiving 5 items, transition from full-screen loading to side indicator
+    if (showFullScreenLoading && receivedCount.current >= 5) {
+      // Animate the transition
+      Animated.timing(loadingOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true
+      }).start(() => {
+        setShowFullScreenLoading(false);
+      });
+    }
   };
 
   const toggleSortType = () => setSortType(prev => prev === 'date' ? 'name' : 'date');
@@ -380,31 +334,41 @@ const CircularsScreen = () => {
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholderTextColor={COLORS.textSecondary}
+          editable={!initialLoading}
         />
         {searchQuery.length > 0 && (
-          <TouchableOpacity 
-            style={styles.clearSearchButton} 
+          <TouchableOpacity
+            style={styles.clearSearchButton}
             onPress={() => setSearchQuery('')}
+            disabled={initialLoading}
           >
             <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
           </TouchableOpacity>
         )}
         <View style={styles.sortOptions}>
-          <TouchableOpacity style={styles.sortButton} onPress={toggleSortType}>
-            <Ionicons 
-              name={sortType === 'date' ? 'calendar' : 'text'} 
-              size={20} 
-              color={COLORS.primary} 
+          <TouchableOpacity
+            style={styles.sortButton}
+            onPress={toggleSortType}
+            disabled={initialLoading}
+          >
+            <Ionicons
+              name={sortType === 'date' ? 'calendar' : 'text'}
+              size={20}
+              color={COLORS.primary}
             />
             <Text style={styles.sortButtonText}>
               {sortType === 'date' ? 'Date' : 'Name'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.sortButton} onPress={toggleSortOrder}>
-            <Ionicons 
-              name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'} 
-              size={20} 
-              color={COLORS.primary} 
+          <TouchableOpacity
+            style={styles.sortButton}
+            onPress={toggleSortOrder}
+            disabled={initialLoading}
+          >
+            <Ionicons
+              name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'}
+              size={20}
+              color={COLORS.primary}
             />
             <Text style={styles.sortButtonText}>
               {sortOrder === 'asc' ? 'Ascending' : 'Descending'}
@@ -413,43 +377,50 @@ const CircularsScreen = () => {
         </View>
       </View>
 
-      {initialLoading ? (
-        <View style={styles.loadingOverlay}>
+      {/* Main content with SectionList */}
+      <SectionList
+        sections={circulars}
+        keyExtractor={(item, index) => `${item.url}-${index}`}
+        renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
+        contentContainerStyle={styles.listContainer}
+        stickySectionHeadersEnabled={true}
+        ListEmptyComponent={!loading ? renderEmptyList : null}
+      />
+
+      {/* Full-screen loading overlay (shown until 5 items are received) */}
+      {showFullScreenLoading && (
+        <Animated.View style={[styles.loadingOverlay, { opacity: loadingOpacity }]}>
           <View style={styles.loadingIndicator}>
             <ActivityIndicator size="large" color={COLORS.primary} />
             <Text style={{ marginTop: 10, color: COLORS.text }}>
-              {loadingProgress > 0 
-                ? `Loaded ${loadingProgress} items...` 
+              {loadingProgress > 0
+                ? `Loaded ${loadingProgress} items...`
                 : 'Connecting to server...'}
             </Text>
+            {loadingProgress >= 5 && (
+              <Text style={styles.loadingSubtext}>Almost ready...</Text>
+            )}
           </View>
+        </Animated.View>
+      )}
+
+      {/* Side loading indicator (shown after 5 items are received) */}
+      {loading && !showFullScreenLoading && originalData.length > 0 && (
+        <View style={styles.streamingIndicator}>
+          <ActivityIndicator size="small" color={COLORS.primary} />
+          <Text style={styles.streamingText}>Loading more... ({loadingProgress})</Text>
         </View>
-      ) : (
-        <>
-          <SectionList
-            sections={circulars}
-            keyExtractor={(item, index) => `${item.url}-${index}`}
-            renderItem={renderItem}
-            renderSectionHeader={renderSectionHeader}
-            contentContainerStyle={styles.listContainer}
-            stickySectionHeadersEnabled={true}
-            ListEmptyComponent={renderEmptyList}
-          />
-          {loading && originalData.length > 0 && (
-            <View style={styles.streamingIndicator}>
-              <ActivityIndicator size="small" color={COLORS.primary} />
-              <Text style={styles.streamingText}>Receiving updates... ({loadingProgress})</Text>
-            </View>
-          )}
-          {!loading && originalData.length > 0 && (
-            <TouchableOpacity 
-              style={styles.refreshButton} 
-              onPress={fetchCirculars}
-            >
-              <Ionicons name="refresh" size={20} color="#fff" />
-            </TouchableOpacity>
-          )}
-        </>
+      )}
+
+      {/* Refresh button (shown when loading is complete) */}
+      {!loading && originalData.length > 0 && (
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={fetchCirculars}
+        >
+          <Ionicons name="refresh" size={20} color="#fff" />
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -575,6 +546,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    zIndex: 10,
   },
   loadingIndicator: {
     backgroundColor: '#fff',
@@ -582,6 +554,13 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: 'center',
     elevation: 4,
+    minWidth: 200,
+  },
+  loadingSubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -597,13 +576,18 @@ const styles = StyleSheet.create({
   streamingIndicator: {
     position: 'absolute',
     bottom: 20,
-    alignSelf: 'center',
+    left: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
     padding: 12,
     borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
     elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    maxWidth: '60%',
   },
   streamingText: {
     marginLeft: 8,
