@@ -515,7 +515,9 @@ export default function App() {
               } else if (route.name === 'Profile') {
                 iconName = focused ? 'person' : 'person-outline';
               } else if (route.name === 'Certificates') {
-                iconName = focused ? 'document-text' : 'document-text-outline';
+                iconName = focused ? 'ribbon' : 'ribbon-outline';
+              }else if (route.name === 'Circulars') {
+                iconName = focused ? 'newspaper' : 'newspaper-outline';
               }
               
               return <Ionicons name={iconName} size={size} color={color} />;

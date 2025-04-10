@@ -427,7 +427,7 @@ const FacultyAvailabilityScreen = () => {
       >
         <Text style={styles.headerTitle}>Availability Checker</Text>
       </LinearGradient>
-
+      
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
         <TouchableOpacity
@@ -455,9 +455,16 @@ const FacultyAvailabilityScreen = () => {
           contentContainerStyle={styles.scrollViewContent}
           showsVerticalScrollIndicator={false}
         >
+          
           {/* Faculty Availability Query Interface */}
           {activeTab === 'faculty' && (
             <Card style={styles.queryContainer}>
+              <View style={styles.noticeContainer}>
+  <Ionicons name="information-circle" size={20} color={COLORS.primary} />
+  <Text style={styles.noticeText}>
+    Any <Text style={styles.highlightedText}>unavailability of faculty </Text>due to any unforeseen reasons like <Text style={styles.highlightedText}>leave or meetings </Text>will not be reflected here
+  </Text>
+</View>
             <View style={styles.queryTitleContainer}>
               <MaterialCommunityIcons name="account-search" size={24} color={COLORS.primary} style={styles.queryTitleIcon} />
               <Text style={styles.queryTitle}>Find Faculty Availability</Text>
@@ -1221,6 +1228,27 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
+  },
+  noticeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    marginHorizontal: 10,
+    marginBottom: 10,
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+  },
+  noticeText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 13,
+    color: COLORS.text,
+  },highlightedText: {
+    fontWeight: 'bold',
+    color: COLORS.primary,
   },
   instructionNumberText: {
     color: COLORS.secondary,

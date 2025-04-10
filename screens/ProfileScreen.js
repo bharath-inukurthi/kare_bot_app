@@ -1,4 +1,6 @@
 import React from 'react';
+import { Platform, Easing } from 'react-native';
+import { useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -89,6 +91,42 @@ const ProfileScreen = () => {
   const SECTION_OPTIONS = Array.from({length: 30}, (_, i) => `S${String(i + 1).padStart(2, '0')}`);
   const YEAR_OPTIONS = ['II', 'III'];
   const SEMESTER_OPTIONS = ['Odd', 'Even'];
+
+// Inside your component
+const directorCreditOpacity = useRef(new Animated.Value(0)).current;
+const directorCreditTextOpacity = useRef(new Animated.Value(0)).current;
+const directorCreditTranslateY = useRef(new Animated.Value(100)).current;
+const directorCreditNameTranslateY = useRef(new Animated.Value(150)).current;
+const directorCreditTilt = useRef(new Animated.Value(0)).current;
+
+useEffect(() => {
+  if (showCreditsModal) {
+    Animated.parallel([
+      Animated.spring(directorCreditOpacity, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.spring(directorCreditTextOpacity, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.spring(directorCreditTranslateY, {
+        toValue: 0,
+        duration: 800,
+        easing: Easing.out(Easing.exp),
+        useNativeDriver: true,
+      }),
+      Animated.spring(directorCreditNameTranslateY, {
+        toValue: 0,
+        duration: 1000,
+        easing: Easing.out(Easing.exp),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }
+}, [showCreditsModal]);
 
   React.useEffect(() => {
     loadUserData();
@@ -213,21 +251,15 @@ const ProfileScreen = () => {
       icon: '🏫',
       action: () => Linking.openURL('https://hostels.kalasalingam.ac.in/')
     },
+   
     {
       id: '4',
-      title: 'Developer Credits',
-      description: 'Meet the awesome team behind KARE Bot',
-      icon: '🚀',
-      action: handleShowCredits
+      title: 'LMS Portal',
+      description: 'One stop solution for your assignment submissions and recorded classes',
+      icon: '𝑳𝐦𝐬',
+      action: () => Linking.openURL('https://lms.kalasalingam.ac.in/login/index.php')
     },
     /*{
-      id: '4',
-      title: 'Notifications',
-      description: 'Manage your notification settings',
-      icon: '🔔',
-      action: () => Alert.alert('Notifications', 'This would allow you to manage notifications')
-    },
-    {
       id: '5',
       title: 'Help & Support',
       description: 'Get assistance with the app',
@@ -239,34 +271,80 @@ const ProfileScreen = () => {
   return (
     <>
       <Modal
-        animationType="fade"
-        transparent={true}
-        visible={showCreditsModal}
-        onRequestClose={() => setShowCreditsModal(false)}
-      >
-        <Animated.View style={[styles.creditsModal, { opacity: fadeAnim }]}>
-          <TouchableOpacity
-            style={styles.creditsDismiss}
-            onPress={() => setShowCreditsModal(false)}
-          >
-            <Text style={styles.creditsDismissText}>×</Text>
-          </TouchableOpacity>
-          <ScrollView contentContainerStyle={styles.creditsContent}>
-            <Animated.View style={{ transform: [{ scale: scaleAnim }], alignItems: 'center', width: '100%' }}>
-              <Text style={styles.creditsTitle}>✨ KARE Bot Squad ✨</Text>
-              <Text style={styles.creditsText}>"Turning Coffee into Code"</Text>
-              <Text style={styles.creditsRole}>🎭 Supreme Meme Lord 🎭</Text>
-              <Text style={styles.creditsText}>Bharathi "The Memelord" Nukurthi</Text>
-              <Text style={styles.creditsRole}>🐛 Bug Bounty Hunter 🐛</Text>
-              <Text style={styles.creditsText}>Error 404: Sleep Not Found</Text>
-              <Text style={styles.creditsRole}>🎨 Pixel Perfectionist 🎨</Text>
-              <Text style={styles.creditsText}>CSS Whisperer</Text>
-              <Text style={styles.creditsRole}>🤖 AI Sensei 🤖</Text>
-              <Text style={styles.creditsText}>Professional Prompt Engineer</Text>
-            </Animated.View>
-          </ScrollView>
-        </Animated.View>
-      </Modal>
+  animationType="fade"
+  transparent={true}
+  visible={showCreditsModal}
+  onRequestClose={() => setShowCreditsModal(false)}
+>
+  <Animated.View style={[styles.creditsModal, { opacity: fadeAnim }]}>
+    <TouchableOpacity
+      style={styles.creditsDismiss}
+      onPress={() => setShowCreditsModal(false)}
+    >
+      <Text style={styles.creditsDismissText}>×</Text>
+    </TouchableOpacity>
+    
+    {/* Director credit with fade in/out */}
+    <Animated.View 
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'black',
+        opacity: directorCreditOpacity,
+        zIndex: 10
+      }}
+    >
+      <Animated.Text
+  style={{
+    color: 'white',
+    fontSize: 20,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    textAlign: 'center',
+    marginBottom: 10,
+    opacity: directorCreditTextOpacity,
+    transform: [
+      { translateY: directorCreditTranslateY },
+      {
+        rotate: directorCreditTilt.interpolate({
+          inputRange: [-10, 10],
+          outputRange: ['-2deg', '2deg'],
+        }),
+      },
+    ],
+  }}
+>
+  Written & Directed by
+</Animated.Text>
+
+<Animated.Text
+  style={{
+    color: 'white',
+    fontSize: 20,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    textAlign: 'center',
+    marginBottom: 10,
+    opacity: directorCreditTextOpacity,
+    transform: [
+      { translateY: directorCreditTranslateY },
+      {
+        rotate: directorCreditTilt.interpolate({
+          inputRange: [-10, 10],
+          outputRange: ['-2deg', '2deg'],
+        }),
+      },
+    ],
+  }}
+>
+  Bharath Inukurthi
+</Animated.Text>
+    </Animated.View>
+  </Animated.View>
+</Modal>
       
       <SafeAreaView style={styles.container}>
         <LinearGradient
@@ -862,6 +940,28 @@ const styles = StyleSheet.create({
   },
   specialThanks: {
     marginTop: 30,
+  },creditsModal: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  creditsDismiss: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  creditsDismissText: {
+    color: 'white',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
   modalTitle: {
     fontSize: 20,
