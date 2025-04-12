@@ -40,30 +40,6 @@ const CertificatesScreen = ({ navigation }) => {
   const [tempFileName, setTempFileName] = useState('');
   const [fileNameResolver, setFileNameResolver] = useState(null);
 
-  // Get external directory path that persists after app uninstall
-  const getExternalDirectory = async () => {
-    try {
-      // Request permissions to access external storage
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        return null;
-      }
-      
-      // Get the Pictures directory
-      const albums = await MediaLibrary.getAlbumsAsync();
-      const picturesAlbum = albums.find(album => album.title === 'Pictures');
-      
-      if (picturesAlbum) {
-        // Return a directory path that will persist
-        return `${FileSystem.documentDirectory}external_certificates/`;
-      }
-      return null;
-    } catch (error) {
-      console.error('External directory error:', error);
-      return null;
-    }
-  };
-
   // Constants
   const CERTIFICATES_DIRECTORY = FileSystem.documentDirectory + 'certificates/';
   const FOLDER_NAME = 'KareBot Certificates';
@@ -289,32 +265,53 @@ const CertificatesScreen = ({ navigation }) => {
       // Save to external storage if permissions granted
       const hasPermission = await ensureMediaLibraryPermissions();
 
-if (hasPermission) {
-  try {
-    // Save to media library first
-    const asset = await MediaLibrary.createAssetAsync(destinationUri);
-    
-    // Then create or get the album with the asset
-    const album = await createCertificatesAlbum(asset);
-    
-    if (album) {
-      // Add the asset to the album if it's not already there
-      await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-    }
-    
-    Alert.alert(
-      'Success',
-      `Certificate saved as "${fileName}"! It is also available in your Pictures/${FOLDER_NAME} folder.`,
-      [{ text: 'OK' }]
-    );
-  } catch (error) {
-    console.error('External save error:', error);
-    Alert.alert(
-      'Partial Success', 
-      `Certificate saved as "${fileName}" within the app, but could not be saved to your device gallery.`
-    );
-  }
-}
+      // First consider the operation successful after internal save
+      let savedToGallery = false;
+
+      if (hasPermission) {
+        try {
+          // Save to media library with a more robust approach
+          const asset = await MediaLibrary.createAssetAsync(destinationUri);
+          
+          if (asset) {
+            // Try to get or create the album
+            const album = await getOrCreateAlbum();
+            
+            if (album) {
+              // Add the asset to the album with error handling
+              try {
+                await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+                savedToGallery = true;
+              } catch (albumError) {
+                console.warn('Could not add asset to album:', albumError);
+                // The asset is still saved to the media library, just not in our album
+                savedToGallery = true;
+              }
+            } else {
+              // Album creation/fetching failed, but asset is still in the media library
+              savedToGallery = true;
+            }
+          }
+        } catch (externalSaveError) {
+          console.error('External save error:', externalSaveError);
+          // Continue with the flow, we'll show appropriate messages
+        }
+      }
+      
+      // Show appropriate success message
+      if (savedToGallery) {
+        Alert.alert(
+          'Success',
+          `Certificate saved as "${fileName}"! It is also available in your device gallery.`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'Partial Success', 
+          `Certificate saved within the app as "${fileName}", but could not be saved to your device gallery.`,
+          [{ text: 'OK' }]
+        );
+      }
       
       // Refresh the certificates list
       await loadCertificates();
@@ -326,28 +323,71 @@ if (hasPermission) {
     }
   };
 
-  // Create album for certificates if it doesn't exist
-  const createCertificatesAlbum = async (asset) => {
+  // Get or create album for certificates with improved error handling
+  const getOrCreateAlbum = async () => {
     try {
+      // First try to find existing album
       const albums = await MediaLibrary.getAlbumsAsync();
       const certificatesAlbum = albums.find(album => album.title === FOLDER_NAME);
       
-      if (!certificatesAlbum) {
-        if (Platform.OS === 'android' && asset) {
-          // On Android, we need an asset to create an album
-          await MediaLibrary.createAlbumAsync(FOLDER_NAME, asset, false);
-        } else if (Platform.OS === 'ios') {
-          // On iOS, we can create an empty album
-          await MediaLibrary.createAlbumAsync(FOLDER_NAME, null, false);
-        }
-        return await MediaLibrary.getAlbumAsync(FOLDER_NAME);
+      if (certificatesAlbum) {
+        return certificatesAlbum;
       }
-      return certificatesAlbum;
+      
+      // Album doesn't exist, create it based on platform
+      if (Platform.OS === 'android') {
+        // For Android, we'll create a temporary asset first if needed
+        const tempAsset = await createTemporaryAssetIfNeeded();
+        if (tempAsset) {
+          try {
+            const newAlbum = await MediaLibrary.createAlbumAsync(FOLDER_NAME, tempAsset, false);
+            return newAlbum;
+          } catch (albumError) {
+            console.warn('Failed to create album with asset:', albumError);
+            return null;
+          }
+        }
+        return null;
+      } else if (Platform.OS === 'ios') {
+        // On iOS, we can create an empty album
+        try {
+          await MediaLibrary.createAlbumAsync(FOLDER_NAME, null, false);
+          return await MediaLibrary.getAlbumAsync(FOLDER_NAME);
+        } catch (iosAlbumError) {
+          console.warn('Failed to create iOS album:', iosAlbumError);
+          return null;
+        }
+      }
+      
+      return null;
     } catch (error) {
-      console.error('Album creation error:', error);
-      throw error;
+      console.error('Album creation/fetch error:', error);
+      return null;
     }
   };
+
+  // Create a temporary asset if needed for album creation on Android
+  const createTemporaryAssetIfNeeded = async () => {
+    // This function is only needed for Android when creating a new album
+    if (Platform.OS !== 'android') return null;
+    
+    try {
+      // Check if we have any existing certificates
+      if (rawCertificates.length > 0) {
+        // Use an existing certificate as the asset for album creation
+        const firstCert = rawCertificates[0];
+        return await MediaLibrary.createAssetAsync(firstCert.uri);
+      }
+      
+      // If no certificates exist, we'll need a temporary image
+      // We'll use a simple approach - copy from the selected image
+      return null; // This will be handled in the calling function
+    } catch (error) {
+      console.warn('Failed to create temporary asset:', error);
+      return null;
+    }
+  };
+
   // Sharing functionality
   const shareCertificate = async (uri) => {
     try {
@@ -367,11 +407,10 @@ if (hasPermission) {
     }
   };
 
-  // Certificate deletion
+  // Certificate deletion with improved error handling
   const deleteCertificate = async (uri) => {
     try {
       const filename = uri.split('/').pop();
-      const certificate = rawCertificates.find(cert => cert.uri === uri);
       
       Alert.alert(
         'Confirm Deletion',
@@ -388,57 +427,16 @@ if (hasPermission) {
                 await FileSystem.deleteAsync(uri);
                 console.log(`Deleted internal file: ${uri}`);
                 
-                // 2. Check if we have permission to access media library
+                // 2. Try to delete from media library if possible
                 const { status } = await MediaLibrary.getPermissionsAsync();
-                if (status !== 'granted') {
-                  console.log('No media library permissions, skipping external deletion');
-                  Alert.alert('Success', 'Certificate deleted from app storage. Media library access not granted.');
-                  loadCertificates();
-                  return;
-                }
-                
-                // 3. Try to delete from media library if we have an asset ID
-                if (certificate && certificate.externalAssetId) {
+                if (status === 'granted') {
+                  // Attempt to find and delete the matching asset in the media library
                   try {
-                    await MediaLibrary.deleteAssetsAsync([certificate.externalAssetId]);
-                    console.log(`Successfully deleted asset by ID: ${certificate.externalAssetId}`);
+                    await deleteFromMediaLibrary(filename);
                   } catch (mediaError) {
-                    console.log('Could not delete by asset ID, trying to find by filename', mediaError);
-                    // Don't throw here, continue to try alternate method
+                    console.log('Media library deletion error:', mediaError);
+                    // Don't block the flow - we've already deleted from internal storage
                   }
-                }
-                
-                // 4. Alternate method: try to find and delete by filename
-                // This is a fallback if we don't have the asset ID or the direct deletion failed
-                try {
-                  // First try to get the album
-                  const albums = await MediaLibrary.getAlbumsAsync();
-                  const targetAlbum = albums.find(album => album.title === FOLDER_NAME);
-                  
-                  if (targetAlbum) {
-                    const assets = await MediaLibrary.getAssetsAsync({
-                      album: targetAlbum.id,  // Use album ID instead of name
-                      mediaType: 'photo'      // Specify media type
-                    });
-                    
-                    // Find matching assets by filename
-                    const matchingAssets = assets.assets.filter(asset => 
-                      asset.filename === filename || 
-                      asset.uri.endsWith(filename)
-                    );
-                    
-                    if (matchingAssets.length > 0) {
-                      await MediaLibrary.deleteAssetsAsync(matchingAssets);
-                      console.log(`Deleted ${matchingAssets.length} matching assets by filename`);
-                    } else {
-                      console.log('No matching assets found in the album');
-                    }
-                  } else {
-                    console.log(`Album "${FOLDER_NAME}" not found`);
-                  }
-                } catch (secondaryMediaError) {
-                  console.log('Secondary media deletion attempt failed:', secondaryMediaError);
-                  // Continue without throwing, we've already deleted from internal storage
                 }
                 
                 Alert.alert('Success', 'Certificate deleted successfully');
@@ -456,6 +454,58 @@ if (hasPermission) {
     } catch (error) {
       console.error('Delete request error:', error);
       Alert.alert('Error', 'Failed to process deletion request');
+    }
+  };
+
+  // Helper function to delete asset from media library
+  const deleteFromMediaLibrary = async (filename) => {
+    // 1. Try to find the certificate in our album first
+    try {
+      const albums = await MediaLibrary.getAlbumsAsync();
+      const targetAlbum = albums.find(album => album.title === FOLDER_NAME);
+      
+      if (targetAlbum) {
+        const assets = await MediaLibrary.getAssetsAsync({
+          album: targetAlbum.id,
+          mediaType: 'photo'
+        });
+        
+        // Find assets that match our filename
+        const matchingAssets = assets.assets.filter(asset => 
+          asset.filename === filename || 
+          asset.uri.includes(filename) ||
+          asset.filename.includes(filename.replace('.jpg', ''))
+        );
+        
+        if (matchingAssets.length > 0) {
+          // Found matching assets in our album, delete them
+          await MediaLibrary.deleteAssetsAsync(matchingAssets);
+          console.log(`Deleted ${matchingAssets.length} matching assets from album`);
+          return;
+        }
+      }
+      
+      // 2. If not found in our album, search in all photos
+      const allPhotos = await MediaLibrary.getAssetsAsync({
+        mediaType: 'photo',
+        first: 100 // Limit search to recent photos
+      });
+      
+      const matchingAssets = allPhotos.assets.filter(asset => 
+        asset.filename === filename || 
+        asset.uri.includes(filename) ||
+        asset.filename.includes(filename.replace('.jpg', ''))
+      );
+      
+      if (matchingAssets.length > 0) {
+        await MediaLibrary.deleteAssetsAsync(matchingAssets);
+        console.log(`Deleted ${matchingAssets.length} matching assets from all photos`);
+      } else {
+        console.log('No matching assets found to delete');
+      }
+    } catch (error) {
+      console.warn('Asset deletion error:', error);
+      throw error;
     }
   };
 
@@ -720,7 +770,6 @@ if (hasPermission) {
     </GestureHandlerRootView>
   );
 };
-
 // Styles
 const styles = StyleSheet.create({
   container: {
