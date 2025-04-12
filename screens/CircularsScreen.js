@@ -1,545 +1,527 @@
-  import React, { useState, useEffect, useRef, useCallback } from 'react';
-  import {
-    View,
-    Text,
-    StyleSheet,
-    TouchableOpacity,
-    ActivityIndicator,
-    TextInput,
-    Platform,
-    StatusBar,
-    SectionList,
-    Animated,
-  } from 'react-native';
-  import { Ionicons } from '@expo/vector-icons';
-  import { LinearGradient } from 'expo-linear-gradient';
-  import { Linking, Alert } from 'react-native';
-  import { COLORS } from '../constants/Colors';
-  import { fetch } from 'expo/fetch';
 
-  const CircularsScreen = () => {
-    const [circulars, setCirculars] = useState([]);
-    const [originalData, setOriginalData] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [initialLoading, setInitialLoading] = useState(true);
-    const [loadingProgress, setLoadingProgress] = useState(0);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [sortType, setSortType] = useState('date');
-    const [sortOrder, setSortOrder] = useState('desc');
-    const [showFullScreenLoading, setShowFullScreenLoading] = useState(true);
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  TextInput,
+  Platform,
+  StatusBar,
+  SectionList,
+  Animated,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Linking, Alert } from 'react-native';
+import { COLORS } from '../constants/Colors';
+import { fetch } from 'expo/fetch';
 
-    // Animation value for loading indicator
-    const loadingOpacity = useRef(new Animated.Value(1)).current;
+const CircularsScreen = () => {
+  const [circulars, setCirculars] = useState([]);
+  const [originalData, setOriginalData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortType, setSortType] = useState('date');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [showFullScreenLoading, setShowFullScreenLoading] = useState(true);
 
-    // Refs
-    const isMounted = useRef(true);
-    const fetchControllerRef = useRef(null);
-    const receivedCount = useRef(0);
+  // Animation value for loading indicator
+  const loadingOpacity = useRef(new Animated.Value(1)).current;
 
-    useEffect(() => {
-      return () => {
-        isMounted.current = false;
-        if (fetchControllerRef.current) {
-          fetchControllerRef.current.abort();
-        }
-      };
-    }, []);
+  // Refs
+  const isMounted = useRef(true);
+  const fetchControllerRef = useRef(null);
+  const receivedCount = useRef(0);
+  const dataByGroupRef = useRef({});
 
-    useEffect(() => {
-      fetchCirculars();
-    }, []);
+  // Helper function to parse date string in "month_name-year-day" format
+  const parseDateString = (dateString) => {
+    if (!dateString) return null;
+    
+    const parts = dateString.split('-');
+    if (parts.length !== 3) return null;
+    
+    const monthName = parts[0];
+    const year = parseInt(parts[1]);
+    const day = parseInt(parts[2]);
+    
+    const monthMap = {
+      'January': 0, 'February': 1, 'March': 2, 'April': 3,
+      'May': 4, 'June': 5, 'July': 6, 'August': 7,
+      'September': 8, 'October': 9, 'November': 10, 'December': 11
+    };
+    
+    if (isNaN(year) || isNaN(day) || monthMap[monthName] === undefined) {
+      return null;
+    }
+    
+    return new Date(year, monthMap[monthName], day);
+  };
 
-    // Memoize the processAndSortCirculars function to prevent unnecessary executions
-    const processAndSortCirculars = useCallback((data) => {
-      if (!data || !Array.isArray(data) || data.length === 0) {
-        setCirculars([]);
-        return;
+  // Helper to extract month from date string
+  const getMonthFromDateString = (dateString) => {
+    if (!dateString) return null;
+    const parts = dateString.split('-');
+    return parts.length >= 1 ? parts[0] : null;
+  };
+
+  // Helper to extract year from date string
+  const getYearFromDateString = (dateString) => {
+    if (!dateString) return null;
+    const parts = dateString.split('-');
+    return parts.length >= 2 ? parseInt(parts[1]) : null;
+  };
+
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+      if (fetchControllerRef.current) {
+        fetchControllerRef.current.abort();
       }
+    };
+  }, []);
 
-      // Filter based on search query
-      let filteredData = data;
-      if (searchQuery) {
-        filteredData = data.filter(item =>
-          item.filename?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.date?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.month?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-      }
+  useEffect(() => {
+    fetchCirculars();
+  }, []);
 
-      // Define month order for proper sorting
-      const monthOrder = {
-        'January': 1, 'February': 2, 'March': 3, 'April': 4,
-        'May': 5, 'June': 6, 'July': 7, 'August': 8,
-        'September': 9, 'October': 10, 'November': 11, 'December': 12
-      };
+  // Memoize the processAndSortCirculars function to prevent unnecessary executions
+  const processAndSortCirculars = useCallback((data) => {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      setCirculars([]);
+      return;
+    }
 
-      // Group and sort data
-      if (sortType === 'date') {
-        // Group by month and year
-        const grouped = {};
+    // Filter based on search query
+    let filteredData = data;
+    if (searchQuery) {
+      filteredData = data.filter(item =>
+        item.filename?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.date?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
 
+    // Define month order for proper sorting
+    const monthOrder = {
+      'January': 1, 'February': 2, 'March': 3, 'April': 4,
+      'May': 5, 'June': 6, 'July': 7, 'August': 8,
+      'September': 9, 'October': 10, 'November': 11, 'December': 12
+    };
+
+    // Group and sort data
+    if (sortType === 'date') {
+      // Use the pre-sorted data from dataByGroupRef
+      let groupedData = { ...dataByGroupRef.current };
+      
+      // If empty (first render or after filter change), rebuild the groups
+      if (Object.keys(groupedData).length === 0) {
         filteredData.forEach(item => {
-          if (!item.date || !item.month) return;
-
-          const month = item.month;
-          const dateParts = item.date.split('/');
-          const year = dateParts.length === 3 ? parseInt(dateParts[2]) : new Date().getFullYear();
+          if (!item.date) return;
+  
+          const month = getMonthFromDateString(item.date);
+          const year = getYearFromDateString(item.date);
+          
+          if (!month || !year) return;
+          
           const key = `${year} ${month}`;
-
-          if (!grouped[key]) {
-            grouped[key] = {
+  
+          if (!groupedData[key]) {
+            groupedData[key] = {
               title: `${month} ${year}`,
               month: month,
               year: year,
               data: []
             };
           }
-
-          grouped[key].data.push(item);
+  
+          // Add to the group (it will be sorted later)
+          groupedData[key].data.push(item);
         });
-
-        // Sort items within each month group - most recent dates first
-        Object.values(grouped).forEach(group => {
-          group.data.sort((a, b) => {
-            // Convert DD/MM/YYYY to Date objects
-            const [dayA, monthA, yearA] = a.date.split('/').map(Number);
-            const [dayB, monthB, yearB] = b.date.split('/').map(Number);
-
-            const dateA = new Date(yearA, monthA - 1, dayA);
-            const dateB = new Date(yearB, monthB - 1, dayB);
-
-            return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
-          });
-        });
-
-        // Convert to array and sort by year first, then by month
-        const result = Object.values(grouped);
-        result.sort((a, b) => {
-          // First sort by year
-          if (a.year !== b.year) {
-            return sortOrder === 'desc' ? b.year - a.year : a.year - b.year;
-          }
-          // Then by month
-          return sortOrder === 'desc'
-            ? monthOrder[b.month] - monthOrder[a.month]
-            : monthOrder[a.month] - monthOrder[b.month];
-        });
-
-        setCirculars(result);
-      } else {
-        // Sort and group by name
-        const sortedData = [...filteredData].sort((a, b) => {
-          const nameA = a.filename?.toLowerCase() || '';
-          const nameB = b.filename?.toLowerCase() || '';
-          return sortOrder === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
-        });
-
-        // Group by first letter
-        const grouped = {};
-        sortedData.forEach(item => {
-          if (!item.filename) return;
-          const letter = item.filename[0].toUpperCase();
-          if (!grouped[letter]) {
-            grouped[letter] = {
-              title: letter,
-              data: []
-            };
-          }
-          grouped[letter].data.push(item);
-        });
-
-        // Convert to array and sort alphabetically
-        const result = Object.values(grouped);
-        result.sort((a, b) => {
-          return sortOrder === 'asc'
-            ? a.title.localeCompare(b.title)
-            : b.title.localeCompare(a.title);
-        });
-
-        setCirculars(result);
       }
-    }, [searchQuery, sortType, sortOrder]);
 
-    // Run processing whenever dependencies change
-    useEffect(() => {
-      processAndSortCirculars(originalData);
-    }, [originalData, searchQuery, sortType, sortOrder, processAndSortCirculars]);
-
-    const fetchCirculars = async () => {
-      setLoading(true);
-      setInitialLoading(true);
-      setShowFullScreenLoading(true);
-      setLoadingProgress(0);
-      setOriginalData([]);
-      receivedCount.current = 0;
-    
-      loadingOpacity.setValue(1);
-    
-      if (fetchControllerRef.current) {
-        fetchControllerRef.current.abort();
-      }
-    
-      const controller = new AbortController();
-      fetchControllerRef.current = controller;
-      
-      const apiUrl = `https://faculty-availability-api.onrender.com/stream-circulars?t=${Date.now()}`;
-    
-      try {
-        const response = await fetch(apiUrl, {
-          headers: {
-            'Accept': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive'
-          },
-          signal: controller.signal
+      // Sort items within each month group
+      Object.values(groupedData).forEach(group => {
+        group.data.sort((a, b) => {
+          const dateA = parseDateString(a.date);
+          const dateB = parseDateString(b.date);
+          
+          // Handle null dates
+          if (!dateA && !dateB) return 0;
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+          
+          return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
         });
-    
-        if (!response.ok || !response.body) {
-          throw new Error(`HTTP error: ${response.status}`);
+      });
+
+      // Convert to array and sort by year first, then by month
+      const result = Object.values(groupedData);
+      result.sort((a, b) => {
+        // First sort by year
+        if (a.year !== b.year) {
+          return sortOrder === 'desc' ? b.year - a.year : a.year - b.year;
         }
+        // Then by month
+        return sortOrder === 'desc'
+          ? monthOrder[b.month] - monthOrder[a.month]
+          : monthOrder[a.month] - monthOrder[b.month];
+      });
+
+      setCirculars(result);
+    } else {
+      // Sort and group by name
+      const sortedData = [...filteredData].sort((a, b) => {
+        const nameA = a.filename?.toLowerCase() || '';
+        const nameB = b.filename?.toLowerCase() || '';
+        return sortOrder === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+      });
+
+      // Group by first letter
+      const grouped = {};
+      sortedData.forEach(item => {
+        if (!item.filename) return;
+        const letter = item.filename[0].toUpperCase();
+        if (!grouped[letter]) {
+          grouped[letter] = {
+            title: letter,
+            data: []
+          };
+        }
+        grouped[letter].data.push(item);
+      });
+
+      // Convert to array and sort alphabetically
+      const result = Object.values(grouped);
+      result.sort((a, b) => {
+        return sortOrder === 'asc'
+          ? a.title.localeCompare(b.title)
+          : b.title.localeCompare(a.title);
+      });
+
+      setCirculars(result);
+    }
+  }, [searchQuery, sortType, sortOrder]);
+
+  // Run processing whenever dependencies change
+  useEffect(() => {
+    processAndSortCirculars(originalData);
+  }, [originalData, searchQuery, sortType, sortOrder, processAndSortCirculars]);
+
+  // Reset grouped data when sort type or order changes
+  useEffect(() => {
+    dataByGroupRef.current = {};
+  }, [sortType, sortOrder, searchQuery]);
+
+  const fetchCirculars = async () => {
+    setLoading(true);
+    setInitialLoading(true);
+    setShowFullScreenLoading(true);
+    setLoadingProgress(0);
+    setOriginalData([]);
+    receivedCount.current = 0;
+    dataByGroupRef.current = {}; // Reset grouped data
+  
+    loadingOpacity.setValue(1);
+  
+    if (fetchControllerRef.current) {
+      fetchControllerRef.current.abort();
+    }
+  
+    const controller = new AbortController();
+    fetchControllerRef.current = controller;
     
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let buffer = '';
-    
-        while (true) {
-          const { done, value } = await reader.read();
-    
-          if (done) {
-            // Stream has finished - mark loading as complete
-            if (isMounted.current) {
-              setLoading(false);
-              setInitialLoading(false);
-              setShowFullScreenLoading(false);
+    const apiUrl = `https://faculty-availability-api.onrender.com/stream-circulars?t=${Date.now()}`;
+  
+    try {
+      const response = await fetch(apiUrl, {
+        headers: {
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        },
+        signal: controller.signal
+      });
+  
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP error: ${response.status}`);
+      }
+  
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+  
+      while (true) {
+        const { done, value } = await reader.read();
+  
+        if (done) {
+          // Stream has finished - mark loading as complete
+          if (isMounted.current) {
+            setLoading(false);
+            setInitialLoading(false);
+            setShowFullScreenLoading(false);
+          }
+          break;
+        }
+  
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+  
+        for (let i = 0; i < lines.length - 1; i++) {
+          const line = lines[i].trim();
+          if (line.startsWith('data:')) {
+            try {
+              const jsonStr = line.slice(5).trim(); // 'data:' is 5 chars
+              const json = JSON.parse(jsonStr);
+              handleNewItem(json);
+            } catch (err) {
+              console.warn('Error parsing line:', line);
             }
-            break;
-          }
-    
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-    
-          for (let i = 0; i < lines.length - 1; i++) {
-            const line = lines[i].trim();
-            if (line.startsWith('data:')) {
-              try {
-                const jsonStr = line.slice(5).trim(); // 'data:' is 5 chars
-                const json = JSON.parse(jsonStr);
-                handleNewItem(json);
-              } catch (err) {
-                console.warn('Error parsing line:', line);
-              }
-            }
-          }
-    
-          buffer = lines[lines.length - 1];
-        }
-      } catch (err) {
-        if (!controller.signal.aborted && isMounted.current) {
-          console.error('Fetch error:', err.message);
-          setLoading(false);
-          setInitialLoading(false);
-          setShowFullScreenLoading(false);
-    
-          if (receivedCount.current === 0) {
-            Alert.alert('Fetch Failed', `${err.message}`, [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Retry', onPress: () => fetchCirculars() }
-            ]);
           }
         }
+  
+        buffer = lines[lines.length - 1];
       }
-    };
-    
-    const handleNewItem = (data) => {
-      // Increment received count
-      receivedCount.current += 1;
-      
-      // Ensure all required fields exist with defaults if missing
-      const processedData = {
-        filename: data.filename || 'Unnamed Document',
-        url: data.url || '',
-        date: data.date || 'Unknown Date',
-        month: data.month || 'Unknown Month',
-        ...data // Keep any other fields
-      };
-
-      // Add to original data
-      setOriginalData(prev => [...prev, processedData]);
-      setLoadingProgress(prev => prev + 1);
-
-      // After receiving first data, remove initial loading overlay
-      if (initialLoading && receivedCount.current >= 1) {
+    } catch (err) {
+      if (!controller.signal.aborted && isMounted.current) {
+        console.error('Fetch error:', err.message);
+        setLoading(false);
         setInitialLoading(false);
+        setShowFullScreenLoading(false);
+  
+        if (receivedCount.current === 0) {
+          Alert.alert('Fetch Failed', `${err.message}`, [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Retry', onPress: () => fetchCirculars() }
+          ]);
+        }
       }
-
-      // After receiving 5 items, transition from full-screen loading to side indicator
-      if (showFullScreenLoading && receivedCount.current >= 5) {
-        // Animate the transition
-        Animated.timing(loadingOpacity, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true
-        }).start(() => {
-          setShowFullScreenLoading(false);
-        });
-      }
+    }
+  };
+  
+  const handleNewItem = (data) => {
+    // Increment received count
+    receivedCount.current += 1;
+    
+    // Ensure all required fields exist with defaults if missing
+    const processedData = {
+      filename: data.filename || 'Unnamed Document',
+      url: data.url || '',
+      date: data.date || 'Unknown Date',
+      ...data // Keep any other fields
     };
 
-    const toggleSortType = () => setSortType(prev => prev === 'date' ? 'name' : 'date');
-    const toggleSortOrder = () => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    // Add to original data
+    setOriginalData(prev => [...prev, processedData]);
+    setLoadingProgress(prev => prev + 1);
 
-    const renderSectionHeader = ({ section }) => (
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{section.title}</Text>
+    // Insert into organized data structure for date sorting
+    if (processedData.date) {
+      const month = getMonthFromDateString(processedData.date);
+      const year = getYearFromDateString(processedData.date);
+      
+      if (!month || !year) return;
+      
+      const key = `${year} ${month}`;
+
+      // Add to or create the month-year group
+      const groupedData = { ...dataByGroupRef.current };
+      if (!groupedData[key]) {
+        groupedData[key] = {
+          title: `${month} ${year}`,
+          month: month,
+          year: year,
+          data: [processedData]
+        };
+      } else {
+        // Add to existing group and sort within that group
+        const currentData = [...groupedData[key].data, processedData];
+        
+        // Sort by date inside the group
+        currentData.sort((a, b) => {
+          const dateA = parseDateString(a.date);
+          const dateB = parseDateString(b.date);
+          
+          // Handle null dates
+          if (!dateA && !dateB) return 0;
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+          
+          // Always sort newest first within the group - actual display order will be handled by sortOrder
+          return dateB - dateA;
+        });
+        
+        groupedData[key].data = currentData;
+      }
+      
+      dataByGroupRef.current = groupedData;
+    }
+
+    // After receiving first data, remove initial loading overlay
+    if (initialLoading && receivedCount.current >= 1) {
+      setInitialLoading(false);
+    }
+
+    // After receiving 5 items, transition from full-screen loading to side indicator
+    if (showFullScreenLoading && receivedCount.current >= 5) {
+      // Animate the transition
+      Animated.timing(loadingOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true
+      }).start(() => {
+        setShowFullScreenLoading(false);
+      });
+    }
+  };
+
+  const toggleSortType = () => setSortType(prev => prev === 'date' ? 'name' : 'date');
+  const toggleSortOrder = () => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+
+  const renderSectionHeader = ({ section }) => (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{section.title}</Text>
+    </View>
+  );
+
+  const renderItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.circularCard}
+      onPress={() => Linking.openURL(item.url)}
+    >
+      <View style={styles.iconContainer}>
+        <Ionicons name="document-text" size={32} color={COLORS.primary} />
       </View>
-    );
+      <View style={styles.circularInfo}>
+        <Text style={styles.circularTitle}>{item.filename}</Text>
+        <Text style={styles.circularDate}>{item.date}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={24} color={COLORS.primary} />
+    </TouchableOpacity>
+  );
 
-    const renderItem = ({ item }) => (
-      <TouchableOpacity
-        style={styles.circularCard}
-        onPress={() => Linking.openURL(item.url)}
+  const renderEmptyList = () => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="document-text-outline" size={60} color={COLORS.grey} />
+      <Text style={styles.emptyText}>
+        {searchQuery ? "No matching circulars" : "No circulars available"}
+      </Text>
+    </View>
+  );
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
+      <LinearGradient
+        colors={[COLORS.primary, COLORS.primary]}
+        style={styles.header}
       >
-        <View style={styles.iconContainer}>
-          <Ionicons name="document-text" size={32} color={COLORS.primary} />
-        </View>
-        <View style={styles.circularInfo}>
-          <Text style={styles.circularTitle}>{item.filename}</Text>
-          <Text style={styles.circularDate}>{item.date}</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={24} color={COLORS.primary} />
-      </TouchableOpacity>
-    );
+        <Text style={styles.headerTitle}>Circulars</Text>
+        <Text style={styles.headerSubtitle}>Latest updates and notifications</Text>
+      </LinearGradient>
 
-    const renderEmptyList = () => (
-      <View style={styles.emptyContainer}>
-        <Ionicons name="document-text-outline" size={60} color={COLORS.grey} />
-        <Text style={styles.emptyText}>
-          {searchQuery ? "No matching circulars" : "No circulars available"}
-        </Text>
+      <View>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search circulars..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholderTextColor={COLORS.textSecondary}
+          editable={!initialLoading}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity
+            style={styles.clearSearchButton}
+            onPress={() => setSearchQuery('')}
+            disabled={initialLoading}
+          >
+            <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+        )}
+        <View style={styles.sortOptions}>
+          <TouchableOpacity
+            style={styles.sortButton}
+            onPress={toggleSortType}
+            disabled={initialLoading}
+          >
+            <Ionicons
+              name={sortType === 'date' ? 'calendar' : 'text'}
+              size={20}
+              color={COLORS.primary}
+            />
+            <Text style={styles.sortButtonText}>
+              {sortType === 'date' ? 'Date' : 'Name'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.sortButton}
+            onPress={toggleSortOrder}
+            disabled={initialLoading}
+          >
+            <Ionicons
+              name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'}
+              size={20}
+              color={COLORS.primary}
+            />
+            <Text style={styles.sortButtonText}>
+              {sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
-    );
-// Add this function definition before the return statement in your component
-const showAddOptions = () => {
-  Alert.alert(
-    'Add Certificate',
-    'Choose an option',
-    [
-      { 
-        text: 'Take Photo', 
-        onPress: async () => {
-          // Request camera permissions
-          const { status } = await ImagePicker.requestCameraPermissionsAsync();
-          if (status !== 'granted') {
-            Alert.alert('Permission Denied', 'Camera permission is required to take photos');
-            return;
-          }
-          
-          // Launch camera
-          const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            quality: 0.8,
-            allowsEditing: true,
-          });
-          
-          if (!result.canceled && result.assets && result.assets.length > 0) {
-            const uri = result.assets[0].uri;
-            saveImage(uri);
-          }
-        } 
-      },
-      { 
-        text: 'Choose from Gallery', 
-        onPress: async () => {
-          // Request media library permissions
-          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (status !== 'granted') {
-            Alert.alert('Permission Denied', 'Media library permission is required to select photos');
-            return;
-          }
-          
-          // Launch image picker
-          const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            quality: 0.8,
-            allowsEditing: true,
-          });
-          
-          if (!result.canceled && result.assets && result.assets.length > 0) {
-            const uri = result.assets[0].uri;
-            saveImage(uri);
-          }
-        } 
-      },
-      { text: 'Cancel', style: 'cancel' }
-    ]
+
+      {/* Main content with SectionList */}
+      <SectionList
+        sections={circulars}
+        keyExtractor={(item, index) => `${item.url}-${index}`}
+        renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
+        contentContainerStyle={styles.listContainer}
+        stickySectionHeadersEnabled={true}
+        ListEmptyComponent={!loading ? renderEmptyList : null}
+      />
+
+      {/* Full-screen loading overlay (shown until 5 items are received) */}
+      {showFullScreenLoading && (
+        <Animated.View style={[styles.loadingOverlay, { opacity: loadingOpacity }]}>
+          <View style={styles.loadingIndicator}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={{ marginTop: 10, color: COLORS.text }}>
+              {loadingProgress > 0
+                ? `Loaded ${loadingProgress} items...`
+                : 'Connecting to server...'}
+            </Text>
+            {loadingProgress >= 5 && (
+              <Text style={styles.loadingSubtext}>Almost ready...</Text>
+            )}
+          </View>
+        </Animated.View>
+      )}
+
+      {/* Side loading indicator (shown after 5 items are received) */}
+      {loading && !showFullScreenLoading && originalData.length > 0 && (
+        <View style={styles.streamingIndicator}>
+          <ActivityIndicator size="small" color={COLORS.primary} />
+          <Text style={styles.streamingText}>Loading more... ({loadingProgress})</Text>
+        </View>
+      )}
+
+      {/* Refresh button (shown when loading is complete) */}
+      {!loading && originalData.length > 0 && (
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={fetchCirculars}
+        >
+          <Ionicons name="refresh" size={20} color="#fff" />
+        </TouchableOpacity>
+      )}
+    </View>
   );
 };
 
-// Also add this helper function to save the image
-const saveImage = async (uri) => {
-  try {
-    // Ask user for a file name
-    const fileName = await promptForFileName();
-    if (!fileName) return;
-    
-    // Create destination path
-    const destinationUri = CERTIFICATES_DIRECTORY + fileName;
-    
-    // Copy the file
-    await FileSystem.copyAsync({
-      from: uri,
-      to: destinationUri
-    });
-    
-    // Request media library permissions for saving externally
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status === 'granted') {
-      // Save to external directory for easier access
-      try {
-        // Ensure external directory exists
-        const extDirInfo = await FileSystem.getInfoAsync(EXTERNAL_DIRECTORY);
-        if (!extDirInfo.exists) {
-          await FileSystem.makeDirectoryAsync(EXTERNAL_DIRECTORY, { intermediates: true });
-        }
-        
-        // Copy to external directory
-        const externalUri = EXTERNAL_DIRECTORY + fileName;
-        await FileSystem.copyAsync({
-          from: uri,
-          to: externalUri
-        });
-        
-        // Save to media library
-        const asset = await MediaLibrary.createAssetAsync(externalUri);
-        const album = await MediaLibrary.getAlbumAsync('KareBot Certificates');
-        
-        if (album === null) {
-          await MediaLibrary.createAlbumAsync('KareBot Certificates', asset, false);
-        } else {
-          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-        }
-      } catch (err) {
-        console.error('External save error:', err);
-        // Continue even if external save fails
-      }
-    }
-    
-    Alert.alert('Success', 'Certificate saved successfully');
-    loadCertificates();
-  } catch (error) {
-    console.error('Save error:', error);
-    Alert.alert('Error', 'Failed to save certificate');
-  }
-};
-    return (
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
-        <LinearGradient
-          colors={[COLORS.primary, COLORS.primary]}
-          style={styles.header}
-        >
-          <Text style={styles.headerTitle}>Circulars</Text>
-          <Text style={styles.headerSubtitle}>Latest updates and notifications</Text>
-        </LinearGradient>
-
-        <View>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search circulars..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor={COLORS.textSecondary}
-            editable={!initialLoading}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity
-              style={styles.clearSearchButton}
-              onPress={() => setSearchQuery('')}
-              disabled={initialLoading}
-            >
-              <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
-            </TouchableOpacity>
-          )}
-          <View style={styles.sortOptions}>
-            <TouchableOpacity
-              style={styles.sortButton}
-              onPress={toggleSortType}
-              disabled={initialLoading}
-            >
-              <Ionicons
-                name={sortType === 'date' ? 'calendar' : 'text'}
-                size={20}
-                color={COLORS.primary}
-              />
-              <Text style={styles.sortButtonText}>
-                {sortType === 'date' ? 'Date' : 'Name'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.sortButton}
-              onPress={toggleSortOrder}
-              disabled={initialLoading}
-            >
-              <Ionicons
-                name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'}
-                size={20}
-                color={COLORS.primary}
-              />
-              <Text style={styles.sortButtonText}>
-                {sortOrder === 'asc' ? 'Ascending' : 'Descending'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Main content with SectionList */}
-        <SectionList
-          sections={circulars}
-          keyExtractor={(item, index) => `${item.url}-${index}`}
-          renderItem={renderItem}
-          renderSectionHeader={renderSectionHeader}
-          contentContainerStyle={styles.listContainer}
-          stickySectionHeadersEnabled={true}
-          ListEmptyComponent={!loading ? renderEmptyList : null}
-        />
-
-        {/* Full-screen loading overlay (shown until 5 items are received) */}
-        {showFullScreenLoading && (
-          <Animated.View style={[styles.loadingOverlay, { opacity: loadingOpacity }]}>
-            <View style={styles.loadingIndicator}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
-              <Text style={{ marginTop: 10, color: COLORS.text }}>
-                {loadingProgress > 0
-                  ? `Loaded ${loadingProgress} items...`
-                  : 'Connecting to server...'}
-              </Text>
-              {loadingProgress >= 5 && (
-                <Text style={styles.loadingSubtext}>Almost ready...</Text>
-              )}
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Side loading indicator (shown after 5 items are received) */}
-        {loading && !showFullScreenLoading && originalData.length > 0 && (
-          <View style={styles.streamingIndicator}>
-            <ActivityIndicator size="small" color={COLORS.primary} />
-            <Text style={styles.streamingText}>Loading more... ({loadingProgress})</Text>
-          </View>
-        )}
-
-        {/* Refresh button (shown when loading is complete) */}
-        {!loading && originalData.length > 0 && (
-          <TouchableOpacity
-            style={styles.refreshButton}
-            onPress={fetchCirculars}
-          >
-            <Ionicons name="refresh" size={20} color="#fff" />
-          </TouchableOpacity>
-        )}
-      </View>
-    );
-  };
   const styles = StyleSheet.create({
     container: {
       flex: 1,
