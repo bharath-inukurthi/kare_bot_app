@@ -149,12 +149,7 @@ export const fetchAndCacheTimeTable = async (yearValue, sectionValue, semesterVa
         const sectionNumber = sectionValue.substring(1);
 
         // Check if we can restore from protected storage first
-        const restoredFromProtected = await restoreProtectedImages();
-        if (restoredFromProtected) {
-            console.log('Successfully restored images from protected storage');
-            // If we're here, the paths are already in AsyncStorage so we can just return
-            return;
-        }
+        
 
         // Timetable file key
         const timetableKey = `Time-Tables/${yearValue}-year-S${sectionNumber}.jpg`;
@@ -291,8 +286,46 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
         semester: semester.trim(),
       };
 
+      // Save user details to AsyncStorage
       await AsyncStorage.setItem('userDetails', JSON.stringify(userDetails));
-      await fetchAndCacheTimeTable(year, section, semester);
+      
+      // Fetch and store new schedules in protected directory
+      const sectionNumber = section.substring(1); // Remove 'S' from section (e.g., S01 -> 01)
+      
+      // Timetable file key
+      const timetableKey = `Time-Tables/${year}-year-S${sectionNumber}.jpg`;
+      const timetableApiUrl = `https://faculty-availability-api.onrender.com/get-item/?object_key=${timetableKey}`;
+      
+      // Calendar file key
+      const calendarKey = `Calenders/${semester}-Semester.jpg`;
+      const calendarApiUrl = `https://faculty-availability-api.onrender.com/get-item/?object_key=${calendarKey}`;
+
+      // Fetch and store both images
+      const [timetableResponse, calendarResponse] = await Promise.all([
+        fetch(timetableApiUrl),
+        fetch(calendarApiUrl)
+      ]);
+
+      if (!timetableResponse.ok || !calendarResponse.ok) {
+        throw new Error('Failed to fetch schedules from API');
+      }
+
+      const [timetableData, calendarData] = await Promise.all([
+        timetableResponse.json(),
+        calendarResponse.json()
+      ]);
+
+      // Process and store images in protected storage
+      const [timetableUri, calendarUri] = await Promise.all([
+        processAndStoreImage(timetableData.presigned_url, 'timeTableUri'),
+        processAndStoreImage(calendarData.presigned_url, 'calendarUri')
+      ]);
+
+      // Store the protected paths in AsyncStorage
+      await Promise.all([
+        AsyncStorage.setItem('timeTableUri', timetableUri),
+        AsyncStorage.setItem('calendarUri', calendarUri)
+      ]);
       
       setIsLoading(false);
       
@@ -306,7 +339,7 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
     } catch (error) {
       setIsLoading(false);
       console.error('Error saving user details:', error);
-      Alert.alert('Error', 'Failed to save user details. Please try again.');
+      Alert.alert('Error', 'Failed to save user details and fetch schedules. Please try again.');
     }
   };
 

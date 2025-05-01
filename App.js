@@ -1,5 +1,7 @@
 import * as ImagePicker from "expo-image-picker";
 import React, { useState, useEffect, useMemo } from "react";
+import 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +16,7 @@ import {
   TouchableOpacity,
   View,
   LogBox,
+  Image,
 } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp, getApps } from "firebase/app";
@@ -31,9 +34,12 @@ import {
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
 import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 // Import screens
 import FacultyAvailabilityScreen from './screens/FacultyAvailabilityScreen';
@@ -44,6 +50,7 @@ import UserDetailsScreen from './screens/UserDetailsScreen';
 import PreviewScreen from './screens/PreviewScreen';
 import CircularsScreen from './screens/CircularsScreen';
 import CertificatesScreen from './screens/CertificatesScreen';
+import ToolsScreen from './screens/ToolsScreen';
 
 // Prevents multiple web popup instances
 WebBrowser.maybeCompleteAuthSession();
@@ -60,6 +67,18 @@ const COLORS = {
     start: '#0052cc',
     end: '#4c9aff',
   },
+  dark: {
+    background: '#1a1b1e',
+    surface: '#2a2b2f',
+    tabBar: '#1a1b1e',
+    text: '#ffffff'
+  },
+  light: {
+    background: '#ffffff',
+    surface: '#ffffff',
+    tabBar: '#ffffff',
+    text: '#172b4d'
+  }
 };
 
 // Firebase configuration
@@ -84,11 +103,91 @@ if (!getApps().length) {
 // Firebase sets some timers for long periods which trigger warnings. Ignoring them.
 LogBox.ignoreLogs(['Setting a timer for a long period']);
 
-// Create a Tab Navigator
+// Create navigators
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
+
+const MainStack = () => {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="MainTabs" component={MainApp} />
+      <Stack.Screen name="FacultyAvailabilityScreen" component={FacultyAvailabilityScreen} />
+      <Stack.Screen name="ChatBotScreen" component={ChatBotScreen} />
+      <Stack.Screen name="CircularsScreen" component={CircularsScreen} />
+      <Stack.Screen name="FormsScreen" component={FormsScreen} />
+      <Stack.Screen name="CertificatesScreen" component={CertificatesScreen} />
+    </Stack.Navigator>
+  );
+};
+
+const MainApp = () => {
+  const { theme } = useTheme();
+  
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+
+          if (route.name === 'Schedules') {
+            iconName = focused ? 'time' : 'time-outline';
+          } else if (route.name === 'Tools') {
+            return (
+              <View style={[
+                styles.toolsTabContainer,
+                {
+                  backgroundColor: focused 
+                    ? (theme.isDarkMode ? '#1E3A8A' : '#005EAC') 
+                    : (theme.isDarkMode ? '#005EAC' : '#4299E1'),
+                  width: 56,
+                  height: 56,
+                  borderRadius: 28,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  elevation: 8,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 8,
+                  transform: [{ translateY: -20 }],
+                }
+              ]}>
+                <Image 
+                  source={require('./assets/tools icon.png')}
+                  style={[styles.toolsIcon, { 
+                    tintColor: '#fff',
+                    width: 32,
+                    height: 32,
+                  }]}
+                />
+              </View>
+            );
+          } else if (route.name === 'Profile') {
+            iconName = focused ? 'person' : 'person-outline';
+          }
+
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: theme.primary,
+        tabBarInactiveTintColor: theme.textSecondary,
+        tabBarStyle: {
+          backgroundColor: theme.surface,
+          borderTopColor: theme.border,
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 8,
+        },
+        headerShown: false,
+      })}
+    >
+      <Tab.Screen name="Schedules" component={PreviewScreen} />
+      <Tab.Screen name="Tools" component={ToolsScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+};
 
 export default function App() {
-  // State variables
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -497,60 +596,13 @@ export default function App() {
 
   // User is authenticated and has details, show the tab navigator
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <NavigationContainer>
-        <Tab.Navigator
-          screenOptions={({ route }) => ({
-            tabBarIcon: ({ focused, color, size }) => {
-              let iconName;
-
-              if (route.name === 'Schedules') {
-                iconName = focused ? 'calendar' : 'calendar-outline';
-              } else if (route.name === 'Availability') {
-                iconName = focused ? 'people' : 'people-outline';
-              } else if (route.name === 'Chat') {
-                iconName = focused ? 'chatbubble' : 'chatbubble-outline';
-              } else if (route.name === 'Forms') {
-                iconName = focused ? 'document-text' : 'document-text-outline';
-              } else if (route.name === 'Profile') {
-                iconName = focused ? 'person' : 'person-outline';
-              } else if (route.name === 'Certificates') {
-                iconName = focused ? 'ribbon' : 'ribbon-outline';
-              }else if (route.name === 'Circulars') {
-                iconName = focused ? 'newspaper' : 'newspaper-outline';
-              }
-              
-              return <Ionicons name={iconName} size={size} color={color} />;
-            },
-            tabBarActiveTintColor: COLORS.primary,
-            tabBarInactiveTintColor: 'gray',
-            tabBarLabelStyle: {
-              fontSize: 12,
-              fontWeight: '500',
-            },
-            tabBarStyle: {
-              backgroundColor: COLORS.secondary,
-              borderTopColor: 'rgba(0, 0, 0, 0.1)',
-              padding: 0,
-              height: 50,
-              elevation: 4,
-            },
-            headerShown: false,
-            tabBarHideOnKeyboard: true,
-          })}
-        >
-          <Tab.Screen name="Schedules" component={PreviewScreen} />
-          <Tab.Screen name="Availability" component={FacultyAvailabilityScreen} />
-          <Tab.Screen name="Chat" component={ChatBotScreen} />
-          <Tab.Screen name="Forms" component={FormsScreen} />
-          <Tab.Screen name="Circulars" component={CircularsScreen} />
-          <Tab.Screen name="Certificates" component={CertificatesScreen} />
-          <Tab.Screen name="Profile">
-            {(props) => <ProfileScreen {...props} onUserUpdate={setUser} />}
-          </Tab.Screen>
-        </Tab.Navigator>
-      </NavigationContainer>
-    </GestureHandlerRootView>
+    <ThemeProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <NavigationContainer>
+          <MainStack />
+        </NavigationContainer>
+      </GestureHandlerRootView>
+    </ThemeProvider>
   );
 }
 
@@ -719,5 +771,17 @@ const styles = StyleSheet.create({
   debugButtonText: {
     color: 'white',
     fontSize: 12,
+  },
+  toolsTabContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toolsIcon: {
+    width: 24,
+    height: 24,
+  },
+  toolsLabel: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
