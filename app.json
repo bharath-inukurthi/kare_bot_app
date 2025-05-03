@@ -1,7 +1,6 @@
 {
   "expo": {
     "jsEngine": "hermes",
-  
     "name": "Kare Bot",
     "slug": "kare-bot",
     "version": "1.0.0",
@@ -21,13 +20,13 @@
       "**/*"
     ],
     "ios": {
-      "jsEngine":"hermes",
+      "jsEngine": "hermes",
       "supportsTablet": true,
       "bundleIdentifier": "com.kalasalingam.karebot",
       "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
-      "jsEngine":"hermes",
+      "jsEngine": "hermes",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#0052cc"
