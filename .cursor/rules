@@ -1,5 +1,14 @@
 - what ever command you want to execute make sure you execute it in "(base) PS B:\ReactNative\kare-bot" path
 - my expo sdk is 52 annd node is 20+
--what ever changes you are going to make explain me why you are making it 
+-what ever changes you are going to make explain me why you are making it  and then apply them
 - explain my my mistakes and errors and then proceed so that i can learn from my mistakes
-- use yarn
+- use yarn to install
+- when ever i give you images and instruct you to refactor the ui change the exactly as it is in image unless i mention any changes
+-always retain existing backend code like api requests and handling their response
+-no need of retaining existing ui t=when images are given and instructed to refactor the ui.
+- already there is implementation of theme toggle follow that logic 
+- check reference images carefully i need you to recreate the image UI as it is in reference image.
+- if any new colors are used in given images other than defined in "kare-bot\context\ThemeContext.js" define them in given file and use them in code
+- when ever i tell you to redesign as per the image dont use colors in given file use colors from "kare-bot\context\ThemeContext.js" if you want to use any nnew color add it in given "kare-bot\context\ThemeContext.js" ad use them in code
+- all files are not properly linked with the theme toggle feature check that first and then proceed with changes to avoid errors
+-what ever the components you are redesigning make sure they will adapt to the themes.

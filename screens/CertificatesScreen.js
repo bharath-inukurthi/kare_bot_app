@@ -24,8 +24,23 @@ import * as Sharing from 'expo-sharing';
 import ImageViewer from 'react-native-image-zoom-viewer';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { COLORS } from '../constants/Colors';
+import { useTheme } from '../context/ThemeContext';
+
+const TEAL = '#19C6C1';
+const LIGHT_TEAL = '#E6F8F7';
+const RED = '#F56565';
+const GREEN = '#22C55E';
+const WHITE = '#fff';
+const CARD_BG_LIGHT = '#fff';
+const CARD_BG_DARK = '#1A2536';
+const BG_LIGHT = '#F8FAFC';
+const BG_DARK = '#101828';
+const TEXT_DARK = '#0F172A';
+const TEXT_LIGHT = '#fff';
+const TEXT_SECONDARY = '#64748B';
 
 const CertificatesScreen = ({ navigation }) => {
+  const { isDarkMode, theme } = useTheme();
   // State variables
   const [rawCertificates, setRawCertificates] = useState([]);
   const [certificates, setCertificates] = useState([]);
@@ -39,6 +54,8 @@ const CertificatesScreen = ({ navigation }) => {
   const [isPromptVisible, setIsPromptVisible] = useState(false);
   const [tempFileName, setTempFileName] = useState('');
   const [fileNameResolver, setFileNameResolver] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showNameModal, setShowNameModal] = useState(false);
 
   // Constants
   const CERTIFICATES_DIRECTORY = FileSystem.documentDirectory + 'certificates/';
@@ -181,27 +198,18 @@ const CertificatesScreen = ({ navigation }) => {
   // Handle image capture and saving
   const takePicture = async () => {
     try {
-      // Request camera permissions
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      
       if (status !== 'granted') {
         Alert.alert('Permission Required', 'Please grant access to your camera to take pictures.');
         return;
       }
-      
-      // Launch camera
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         quality: 0.8,
         mediaTypes: 'Images',
       });
-      
-      // Check if the user cancelled the operation
-      if (result.canceled || !result.assets || !result.assets[0]) {
-        return;
-      }
-      
-      // Process captured image
+      if (result.canceled || !result.assets || !result.assets[0]) return;
+      setShowNameModal(true);
       await processSelectedImage(result.assets[0].uri);
     } catch (error) {
       console.error('Camera error:', error);
@@ -212,27 +220,18 @@ const CertificatesScreen = ({ navigation }) => {
   // Handle picking image from gallery
   const pickImage = async () => {
     try {
-      // Request permissions for accessing media library
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
       if (status !== 'granted') {
         Alert.alert('Permission Required', 'Please grant access to your photo library to select images.');
         return;
       }
-      
-      // Open the image picker
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'Images',
         allowsEditing: true,
         quality: 0.8,
       });
-      
-      // Check if the user cancelled the operation
-      if (result.canceled || !result.assets || !result.assets[0]) {
-        return;
-      }
-      
-      // Process selected image
+      if (result.canceled || !result.assets || !result.assets[0]) return;
+      setShowNameModal(true);
       await processSelectedImage(result.assets[0].uri);
     } catch (error) {
       console.error('Image picking error:', error);
@@ -567,330 +566,300 @@ const CertificatesScreen = ({ navigation }) => {
 
   // UI components
   const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.certificateCard}
-      onPress={() => openImageViewer(item.uri)}
-      onLongPress={() => Alert.alert(
-        'Certificate Actions',
-        'Choose an action',
-        [
-          { text: 'Cancel' },
-          { text: 'Delete', onPress: () => deleteCertificate(item.uri), style: 'destructive' },
-          { text: 'Share', onPress: () => shareCertificate(item.uri) },
-        ]
-      )}
-    >
+    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 16, marginBottom: 12, marginHorizontal: 20, borderRadius: 14, shadowColor: '#1e40af', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
       <Image
         source={{ uri: item.uri }}
-        style={styles.thumbnail}
+        style={{ width: 60, height: 60, borderRadius: 10, marginRight: 14 }}
         resizeMode="cover"
       />
-      <View style={styles.certificateInfo}>
-        <Text style={styles.certificateTitle}>{item.filename}</Text>
-        <Text style={styles.certificateDate}>{item.date}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 16, fontWeight: '600', color: '#0F172A', marginBottom: 2 }} numberOfLines={1}>
+          {item.filename.replace('.jpg', '')}
+        </Text>
+        <Text style={{ fontSize: 13, color: '#64748B' }}>Added {item.date}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={24} color={COLORS.primary} />
-    </TouchableOpacity>
+    </View>
   );
 
   const renderSectionHeader = ({ section }) => (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{section.title}</Text>
+    <View style={{ paddingHorizontal: 20, paddingTop: 18, paddingBottom: 4, backgroundColor: 'transparent' }}>
+      <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#0F172A' }}>{section.title}</Text>
+      <View style={{ height: 1, backgroundColor: '#E5EAF1', marginTop: 6 }} />
     </View>
+  );
+
+  // Add Certificate Modal
+  const AddCertificateModal = () => (
+    <Modal
+      visible={showAddModal}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowAddModal(false)}
+    >
+      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,0.18)' }}>
+        <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, width: '100%', maxWidth: 500, alignSelf: 'center' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+            <Text style={{ color: '#0F172A', fontWeight: 'bold', fontSize: 16 }}>Add Certificate</Text>
+            <TouchableOpacity onPress={() => setShowAddModal(false)}>
+              <Ionicons name="close" size={24} color={'#64748B'} />
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity
+            style={{ backgroundColor: '#19C6C1', borderRadius: 10, padding: 16, alignItems: 'center', marginBottom: 12, flexDirection: 'row', justifyContent: 'center' }}
+            onPress={async () => { setShowAddModal(false); await takePicture(); }}
+          >
+            <Ionicons name="camera" size={20} color={'#fff'} style={{ marginRight: 8 }} />
+            <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>Take Photo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ borderWidth: 2, borderColor: '#19C6C1', borderRadius: 10, padding: 16, alignItems: 'center', marginBottom: 12, flexDirection: 'row', justifyContent: 'center', backgroundColor: '#fff' }}
+            onPress={async () => { setShowAddModal(false); await pickImage(); }}
+          >
+            <Ionicons name="image" size={20} color={'#19C6C1'} style={{ marginRight: 8 }} />
+            <Text style={{ color: '#19C6C1', fontWeight: '600', fontSize: 16 }}>Choose from Gallery</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // Name Certificate Modal
+  const NameCertificateModal = () => (
+    <Modal
+      visible={showNameModal && isPromptVisible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={handlePromptCancel}
+    >
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(16,24,40,0.18)' }}>
+        <View style={{ backgroundColor: WHITE, borderRadius: 16, padding: 24, width: 320, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 }}>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', color: TEXT_DARK, marginBottom: 16 }}>Name Certificate</Text>
+          <TextInput
+            style={{ backgroundColor: BG_LIGHT, borderRadius: 8, padding: 12, marginBottom: 20, color: TEXT_DARK, borderWidth: 1, borderColor: '#E2E8F0', fontSize: 16 }}
+            placeholder="Enter certificate name"
+            placeholderTextColor={TEXT_SECONDARY}
+            value={tempFileName}
+            onChangeText={setTempFileName}
+            autoFocus
+          />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}>
+            <TouchableOpacity
+              style={{ flex: 1, backgroundColor: RED, borderRadius: 8, padding: 14, alignItems: 'center' }}
+              onPress={() => { setShowNameModal(false); handlePromptCancel(); }}
+            >
+              <Text style={{ color: WHITE, fontWeight: 'bold', fontSize: 16 }}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ flex: 1, backgroundColor: GREEN, borderRadius: 8, padding: 14, alignItems: 'center' }}
+              onPress={() => { setShowNameModal(false); handlePromptSubmit(); }}
+            >
+              <Text style={{ color: WHITE, fontWeight: 'bold', fontSize: 16 }}>Confirm</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
-        <LinearGradient colors={[COLORS.primary, COLORS.primary]} style={styles.header}>
-          <Text style={styles.headerTitle}>Certificates</Text>
-        </LinearGradient>
-
-        {/* Image Viewer Modal */}
-        <Modal 
-          visible={isViewerVisible} 
-          transparent={true}
-          onRequestClose={() => setIsViewerVisible(false)}
-          animationType="fade"
-          statusBarTranslucent
-          hardwareAccelerated
-        >
-          <View style={styles.modalBackground}>
-            <ImageViewer
-              imageUrls={viewerImages}
-              index={currentImageIndex}
-              enableSwipeDown={true}
-              onSwipeDown={() => setIsViewerVisible(false)}
-              saveToLocalByLongPress={false}
-              renderHeader={() => (
-                <View style={styles.viewerHeader}>
-                  <TouchableOpacity
-                    style={styles.closeButton}
-                    onPress={() => setIsViewerVisible(false)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.closeButtonText}>Close</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={styles.shareButton}
-                    onPress={() => {
-                      if (viewerImages[currentImageIndex]) {
-                        shareCertificate(viewerImages[currentImageIndex].url);
-                      }
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.shareButtonText}>Share</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-              renderIndicator={(currentIndex, allSize) => (
-                <View style={styles.indicatorContainer}>
-                  <Text style={styles.indicatorText}>
-                    {viewerImages[currentIndex - 1]?.props?.title || ''}
-                  </Text>
-                  {allSize > 1 && (
-                    <Text style={styles.pageIndicator}>
-                      {currentIndex}/{allSize}
-                    </Text>
-                  )}
-                </View>
-              )}
-              onClick={() => true}
-              backgroundColor="rgba(0, 0, 0, 0.9)"
-              loadingRender={() => (
-                <View style={styles.loadingContainer}>
-                  <Text style={styles.loadingText}>Loading...</Text>
-                </View>
-              )}
-              renderFooter={() => (
-                <View style={styles.footerContainer}>
-                  <Text style={styles.footerText}>Pinch to zoom • Double tap to reset</Text>
-                </View>
-              )}
-              onError={(error) => {
-                console.error('ImageViewer error:', error);
-                Alert.alert('Error', 'Failed to load image');
-              }}
-            />
-          </View>
-        </Modal>
-
-        {/* File Name Prompt Modal */}
-        <Modal
-          visible={isPromptVisible}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={handlePromptCancel}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Certificate Name</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Enter certificate name"
-                value={tempFileName}
-                onChangeText={setTempFileName}
-                autoFocus
-              />
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelButton]}
-                  onPress={handlePromptCancel}
-                >
-                  <Text style={styles.modalButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.saveButton]}
-                  onPress={handlePromptSubmit}
-                >
-                  <Text style={styles.modalButtonText}>Save</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Main Content */}
-        <View style={styles.controlsContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search certificates..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor={COLORS.textSecondary}
-          />
-          <View style={styles.sortControls}>
-            <TouchableOpacity style={styles.sortButton} onPress={() => setSortType(prev => prev === 'date' ? 'name' : 'date')}>
-              <Ionicons name={sortType === 'date' ? 'calendar' : 'text'} size={20} color={COLORS.primary} />
-              <Text style={styles.sortButtonText}>{sortType === 'date' ? 'Date' : 'Name'}</Text>
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+        <StatusBar barStyle={'dark-content'} />
+        {/* Header */}
+        <View style={{ paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 0, paddingHorizontal: 20, backgroundColor: '#fff' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4 }}>
+              <Ionicons name="arrow-back" size={26} color={'#0F172A'} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.sortButton} onPress={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}>
-              <Ionicons name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'} size={20} color={COLORS.primary} />
-              <Text style={styles.sortButtonText}>{sortOrder === 'asc' ? 'Asc' : 'Desc'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.sortButton} onPress={showAddOptions}>
-              <Ionicons name="add" size={20} color={COLORS.primary} />
-              <Text style={styles.sortButtonText}>Add</Text>
+            <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#0F172A', textAlign: 'center', flex: 1 }}>Certificates</Text>
+            <TouchableOpacity onPress={() => setShowAddModal(true)} style={{ padding: 4 }}>
+              
             </TouchableOpacity>
           </View>
-        </View>
-
-        <View style={styles.noticeContainer}>
-          <Ionicons name="information-circle" size={20} color={COLORS.primary} />
-          <Text style={styles.noticeText}>
-            You can access your certificates from <Text style={styles.highlightedText}>"Pictures/{FOLDER_NAME}"</Text> in your device
+          <Text style={{ color: '#64748B', fontSize: 15, marginTop: 6, marginBottom: 0, textAlign: 'center' }}>
+            Manage your digital certificates
           </Text>
         </View>
-
-        {loading ? (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Loading Certificates...</Text>
+        {/* Search Bar */}
+        <View style={{ paddingHorizontal: 20, marginTop: 18, marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F6FA', borderRadius: 12, paddingHorizontal: 14, height: 44 }}>
+            <Ionicons name="search" size={20} color={'#64748B'} style={{ marginRight: 8 }} />
+            <TextInput
+              style={{ flex: 1, fontSize: 16, color: '#0F172A', backgroundColor: 'transparent' }}
+              placeholder="Search certificates..."
+              placeholderTextColor={'#64748B'}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
           </View>
-        ) : (
-          <SectionList
-            sections={certificates}
-            keyExtractor={(item) => item.uri}
-            renderItem={renderItem}
-            renderSectionHeader={renderSectionHeader}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Ionicons name="document-text-outline" size={60} color={COLORS.grey} />
-                <Text style={styles.emptyText}>No certificates found</Text>
-                <Text style={styles.emptySubText}>Tap the "Add" button to add certificates</Text>
-              </View>
-            }
-            contentContainerStyle={styles.listContent}
-          />
+        </View>
+        {/* Filter/Sort Buttons */}
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8, paddingHorizontal: 20 }}>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: sortType === 'date' ? '#19C6C1' : '#E6F8F7', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 20, marginRight: 4 }}
+            onPress={() => setSortType('date')}
+          >
+            <Text style={{ color: sortType === 'date' ? '#fff' : '#19C6C1', fontWeight: '600' }}>Date</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: sortType === 'name' ? '#19C6C1' : '#E6F8F7', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 20, marginRight: 4 }}
+            onPress={() => setSortType('name')}
+          >
+            <Text style={{ color: sortType === 'name' ? '#fff' : '#19C6C1', fontWeight: '600' }}>Name</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: sortOrder === 'asc' ? '#19C6C1' : '#E6F8F7', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 20, marginRight: 4 }}
+            onPress={() => setSortOrder('asc')}
+          >
+            <Text style={{ color: sortOrder === 'asc' ? '#fff' : '#19C6C1', fontWeight: '600' }}>Asc</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: sortOrder === 'desc' ? '#19C6C1' : '#E6F8F7', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 20 }}
+            onPress={() => setSortOrder('desc')}
+          >
+            <Text style={{ color: sortOrder === 'desc' ? '#fff' : '#19C6C1', fontWeight: '600' }}>Desc</Text>
+          </TouchableOpacity>
+        </View>
+        {/* Certificate List */}
+        <SectionList
+          sections={certificates}
+          keyExtractor={(item) => item.uri}
+          renderItem={renderItem}
+          renderSectionHeader={renderSectionHeader}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="document-text-outline" size={60} color={theme.textSecondary} />
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                No certificates found
+              </Text>
+              <Text style={[styles.emptySubText, { color: theme.textSecondary }]}>
+                Tap the "+" button to add certificates
+              </Text>
+            </View>
+          }
+          contentContainerStyle={styles.listContent}
+        />
+        {/* Add Certificate FAB (Light Mode) */}
+        {!isDarkMode && (
+          <TouchableOpacity
+            style={{ position: 'absolute', bottom: 32, right: 32, backgroundColor: '#19C6C1', borderRadius: 28, width: 56, height: 56, alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: '#19C6C1' }}
+            onPress={() => setShowAddModal(true)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="add" size={32} color={'#fff'} />
+          </TouchableOpacity>
         )}
+        {/* Add Certificate Card (Dark Mode) */}
+        {isDarkMode && (
+          <View style={[styles.darkModeCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.darkModeCardTitle, { color: theme.text }]}>
+              Add Certificate
+            </Text>
+            <TouchableOpacity
+              style={[styles.darkModeCardButton, { backgroundColor: theme.primary }]}
+              onPress={() => setShowAddModal(true)}
+            >
+              <Ionicons name="camera" size={20} color={theme.background} style={styles.darkModeCardIcon} />
+              <Text style={[styles.darkModeCardButtonText, { color: theme.background }]}>
+                Take Photo
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.darkModeCardOutlineButton, { borderColor: theme.text }]}
+              onPress={() => setShowAddModal(true)}
+            >
+              <Ionicons name="image" size={20} color={theme.text} style={styles.darkModeCardIcon} />
+              <Text style={[styles.darkModeCardButtonText, { color: theme.text }]}>
+                Choose from Gallery
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        <AddCertificateModal />
+        <NameCertificateModal />
       </SafeAreaView>
     </GestureHandlerRootView>
   );
 };
-// Styles
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   header: {
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 20,
+    paddingBottom: 16,
     paddingHorizontal: 20,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerButton: {
+    padding: 8,
+  },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.secondary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerSubtitle: {
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  searchContainer: {
+    padding: 16,
+    paddingTop: 0,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    height: 48,
+    marginBottom: 12,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    height: '100%',
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    marginRight: 8,
+  },
+  filterButtonText: {
+    fontWeight: '600',
+    marginLeft: 6,
   },
   certificateCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.secondary,
     padding: 16,
-    marginBottom: 8,
-    borderRadius: 12,
-    gap: 16,
+    marginBottom: 12,
+    marginHorizontal: 16,
+    borderRadius: 14,
   },
-  thumbnail: {
+  certificateImage: {
     width: 60,
     height: 60,
-    borderRadius: 8,
-  },
-  closeButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 8,
-    padding: 12,
-    zIndex: 999,
-  },
-  closeButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  shareButton: {
-    backgroundColor: 'rgba(30, 64, 175, 0.6)',
-    borderRadius: 8,
-    padding: 12,
-    zIndex: 999,
-  },
-  shareButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  viewerHeader: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    right: 20,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-    zIndex: 999,
-  },
-  indicatorContainer: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    left: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    padding: 12,
-    borderRadius: 8,
-    zIndex: 999,
-    elevation: 5,
-  },
-  indicatorText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  pageIndicator: {
-    color: '#fff',
-    fontSize: 14,
-    marginTop: 4,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-  },
-  controlsContainer: {
-    padding: 16,
-  },
-  searchInput: {
-    backgroundColor: COLORS.secondary,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    color: COLORS.text,
-    marginBottom: 12,
-  },
-  sortControls: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-  },
-  sortButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.primaryLight + '20',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    gap: 4,
-  },
-  sortButtonText: {
-    color: COLORS.text,
-    fontWeight: '600',
+    borderRadius: 10,
+    marginRight: 14,
   },
   certificateInfo: {
     flex: 1,
@@ -898,31 +867,24 @@ const styles = StyleSheet.create({
   certificateTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
+    marginBottom: 2,
   },
   certificateDate: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
+    fontSize: 13,
   },
   sectionHeader: {
-    backgroundColor: COLORS.primaryLight + '20',
-    padding: 12,
-    borderRadius: 8,
-    marginVertical: 8,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 4,
+    backgroundColor: 'transparent',
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
-    color: COLORS.primary,
   },
-  loadingOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 16,
-  },
-  loadingText: {
-    color: COLORS.text,
+  sectionDivider: {
+    height: 1,
+    marginTop: 6,
   },
   emptyState: {
     flex: 1,
@@ -932,150 +894,125 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   emptyText: {
-    color: COLORS.textSecondary,
     fontSize: 16,
     fontWeight: 'bold',
   },
   emptySubText: {
-    color: COLORS.textSecondary,
     fontSize: 14,
     textAlign: 'center',
   },
   listContent: {
-    paddingHorizontal: 16,
+    flexGrow: 1,
     paddingBottom: 40,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 32,
+    right: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  darkModeCard: {
+    margin: 16,
+    padding: 16,
+    borderRadius: 16,
+  },
+  darkModeCardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  darkModeCardButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  darkModeCardOutlineButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  darkModeCardIcon: {
+    marginRight: 8,
+  },
+  darkModeCardButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: COLORS.secondary,
-    borderRadius: 12,
-    padding: 20,
-    width: '80%',
-    maxWidth: 400,
+    padding: 24,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.text,
     marginBottom: 16,
   },
-  modalInput: {
-    backgroundColor: COLORS.background,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    color: COLORS.text,
-  },
-  noticeContainer: {
+  modalButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    marginHorizontal: 10,
-    marginBottom: 10,
-    marginTop: 10,
-    padding: 10,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 10,
+    marginBottom: 12,
   },
-  noticeText: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 13,
-    color: COLORS.text,
-  },
-  modalButtons: {
+  modalOutlineButton: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 10,
+    marginBottom: 12,
+    borderWidth: 1,
   },
-  highlightedText: {
-    fontWeight: 'bold',
-    color: COLORS.primary,
-  },
-  modalButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
-  },
-  highlightedText: {
-    fontWeight: 'bold',
-    color: COLORS.primary,
-  },
-  modalButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  cancelButton: {
-    backgroundColor: COLORS.background,
-  },
-  saveButton: {
-    backgroundColor: COLORS.primary,
+  modalCancelButton: {
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
   },
   modalButtonText: {
-    color: COLORS.text,
+    fontSize: 15,
     fontWeight: '600',
   },
-  // New styles from PreviewScreen
-  modalBackground: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 16,
   },
-  indicatorContainer: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    left: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+  modalButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalActionButton: {
+    flex: 1,
     padding: 12,
     borderRadius: 8,
-    zIndex: 999,
-    elevation: 5,
-  },
-  indicatorText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  pageIndicator: {
-    color: '#fff',
-    fontSize: 14,
-    marginTop: 4,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
   },
-  footerContainer: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 40 : 30,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    padding: 8,
-    borderRadius: 8,
-  },
-  footerText: {
-    color: '#fff',
-    fontSize: 12,
-    textAlign: 'center',
+  modalActionButtonText: {
+    fontWeight: 'bold',
   },
 });
-  
+
 export default CertificatesScreen;

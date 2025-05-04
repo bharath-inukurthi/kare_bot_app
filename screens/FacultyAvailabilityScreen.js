@@ -12,60 +12,13 @@ import {
   Platform,
   TextInput,
   Dimensions,
-  StatusBar
+  StatusBar,
+  useColorScheme
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, FontAwesome5, Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
-
-// Define the enhanced color scheme
-const COLORS = {
-  // Primary colors
-  primary: '#1e40af', // Richer blue
-  primaryLight: '#3b82f6', // Lighter blue
-  primaryGradient: ['#1e40af', '#3b82f6'], // Blue gradient
-  
-  // Secondary colors
-  secondary: '#ffffff', // White
-  secondaryDark: '#f8fafc', // Very light gray
-  secondaryGradient: ['#ffffff', '#f8fafc'], // Subtle white gradient
-  
-  // Accent colors
-  accent: '#7c3aed', // Vibrant purple
-  accentLight: '#a78bfa', // Light purple
-  accentGradient: ['#7c3aed', '#a78bfa'], // Purple gradient
-  
-  // Text colors
-  text: '#0f172a', // Dark blue-gray for primary text
-  textSecondary: '#475569', // Gray for secondary text
-  textLight: '#94a3b8', // Light gray for tertiary text
-  
-  // Background colors
-  background: '#f1f5f9', // Light gray background
-  backgroundDark: '#e2e8f0', // Slightly darker background for contrast
-  backgroundGradient: ['#f1f5f9', '#e2e8f0'], // Background gradient
-  
-  // Status colors
-  success: '#10b981', // Green
-  successLight: '#d1fae5', // Light green background
-  successGradient: ['#059669', '#10b981'], // Green gradient
-  
-  warning: '#f59e0b', // Amber
-  warningLight: '#fef3c7', // Light amber background
-  warningGradient: ['#d97706', '#f59e0b'], // Amber gradient
-  
-  error: '#ef4444', // Red
-  errorLight: '#fee2e2', // Light red background
-  errorGradient: ['#dc2626', '#ef4444'], // Red gradient
-  
-  // UI Element colors
-  card: '#ffffff',
-  cardBorder: '#e2e8f0',
-  divider: '#e2e8f0',
-  inputBorder: '#cbd5e1',
-  inputFocus: '#3b82f6',
-  shadow: 'rgba(15, 23, 42, 0.1)',
-  shimmer: ['#f6f7f8', '#edeef1', '#f6f7f8'], // For loading animations
-};
+import { useNavigation } from '@react-navigation/native';
+import { useTheme } from '../context/ThemeContext';
 
 // Mock data for dropdowns
 const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -122,23 +75,14 @@ const fetchFacultyList = async () => {
 };
 
 // Custom Card component for sections
-const Card = ({ children, style }) => {
-  return (
-    <View style={[styles.card, style]}>
-      <LinearGradient
-        colors={COLORS.secondaryGradient}
-        style={styles.cardGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-      >
-        {children}
-      </LinearGradient>
-    </View>
-  );
-};
+const Card = ({ children, style, theme }) => (
+  <View style={[{ borderRadius: 18, backgroundColor: theme.surface, padding: 18, marginBottom: 18 }, style]}>
+    {children}
+  </View>
+);
 
 // Custom Dropdown component
-const Dropdown = ({ label, value, options, onSelect, searchable = false, icon }) => {
+const Dropdown = ({ label, value, options, onSelect, searchable = false, icon, theme }) => {
   const [visible, setVisible] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [filteredOptions, setFilteredOptions] = useState([]);
@@ -172,28 +116,48 @@ const Dropdown = ({ label, value, options, onSelect, searchable = false, icon })
     }
   }, [visible, searchable]);
 
+  // Theme-aware background and border
+  const isDark = theme.background === '#0f172a';
+  const dropdownBg = isDark ? theme.surface : theme.surface;
+  const dropdownBorder = isDark ? theme.border : theme.border;
+  const dropdownText = isDark ? theme.text : theme.text;
+  const dropdownPlaceholder = isDark ? theme.textSecondary : theme.textSecondary;
+
   return (
-    <View style={styles.dropdownContainer}>
-      <Text style={styles.dropdownLabel}>{label}</Text>
+    <View style={{ marginBottom: 14 }}>
+      <Text style={{ fontSize: 13, color: theme.textSecondary, marginBottom: 6, fontWeight: '500', marginLeft: 4 }}>{label}</Text>
       <TouchableOpacity 
-        style={styles.dropdownButton}
+        style={{
+          backgroundColor: dropdownBg,
+          paddingVertical: 14,
+          paddingHorizontal: 16,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: dropdownBorder,
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          elevation: 0,
+        }}
         onPress={() => setVisible(true)}
         activeOpacity={0.8}
       >
-        <View style={styles.dropdownButtonContent}>
-          {icon && <View style={styles.dropdownIcon}>{icon}</View>}
+        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+          {icon && <View style={{ marginRight: 10 }}>{icon}</View>}
           <Text 
-            style={[
-              styles.dropdownButtonText,
-              value ? styles.dropdownButtonTextSelected : null
-            ]}
+            style={{
+              fontSize: 15,
+              color: value ? dropdownText : dropdownPlaceholder,
+              fontWeight: value ? '600' : '400',
+              flex: 1,
+            }}
             numberOfLines={1}
             ellipsizeMode="tail"
           >
             {value || `Select ${label}`}
           </Text>
         </View>
-        <MaterialIcons name="arrow-drop-down" size={24} color={COLORS.textSecondary} />
+        <MaterialIcons name="arrow-drop-down" size={24} color={dropdownPlaceholder} />
       </TouchableOpacity>
 
       <Modal
@@ -202,37 +166,47 @@ const Dropdown = ({ label, value, options, onSelect, searchable = false, icon })
         animationType="fade"
         onRequestClose={() => setVisible(false)}
       >
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
           <TouchableOpacity 
             style={styles.modalOverlay}
             activeOpacity={1}
             onPress={() => setVisible(false)}
           >
-          
-            <View style={styles.modalContent}>
+            <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
               <LinearGradient
-                colors={COLORS.primaryGradient}
+                colors={[theme.primary, theme.primaryLight]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
-                style={styles.modalHeader}
+                style={[styles.modalHeader, { backgroundColor: theme.primary }]}
               >
-                <Text style={styles.modalTitle}>Select {label}</Text>
+                <Text style={[styles.modalTitle, { color: '#FFFFFF', fontWeight: '600' }]}>Select {label}</Text>
                 <TouchableOpacity 
                   onPress={() => setVisible(false)}
                   style={styles.modalCloseButton}
                 >
-                  <Ionicons name="close" size={24} color={COLORS.secondary} />
+                  <Ionicons name="close" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
               </LinearGradient>
               
               {searchable && (
-                <View style={styles.searchContainer}>
-                  <Ionicons name="search" size={20} color={COLORS.textSecondary} style={styles.searchIcon} />
+                <View style={[styles.searchContainer, { 
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                  borderWidth: 1,
+                  marginHorizontal: 16,
+                  marginVertical: 12,
+                  borderRadius: 8
+                }]}>
+                  <Ionicons name="search" size={20} color={theme.textSecondary} style={styles.searchIcon} />
                   <TextInput
                     ref={inputRef}
-                    style={styles.searchInput}
+                    style={[styles.searchInput, { 
+                      color: theme.text,
+                      fontSize: 15,
+                      paddingVertical: 8
+                    }]}
                     placeholder={`Search for ${label.toLowerCase()}...`}
-                    placeholderTextColor={COLORS.textLight}
+                    placeholderTextColor={theme.textSecondary}
                     value={searchText}
                     onChangeText={setSearchText}
                     autoCapitalize="none"
@@ -243,20 +217,30 @@ const Dropdown = ({ label, value, options, onSelect, searchable = false, icon })
                       style={styles.clearButton}
                       onPress={() => setSearchText('')}
                     >
-                      <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
+                      <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
                     </TouchableOpacity>
                   )}
                 </View>
               )}
               
-              <ScrollView style={styles.optionsList} showsVerticalScrollIndicator={false}>
+              <ScrollView style={[styles.optionsList, { maxHeight: 300 }]} showsVerticalScrollIndicator={false}>
                 {filteredOptions.length > 0 ? (
                   filteredOptions.map((option, index) => (
                     <TouchableOpacity 
                       key={index}
                       style={[
                         styles.optionItem,
-                        value === option && styles.selectedOptionItem
+                        { 
+                          borderBottomColor: theme.border,
+                          backgroundColor: value === option ? (theme.background === '#0f172a' ? theme.primary + '55' : theme.primaryLight + '55') : 'transparent',
+                          borderLeftWidth: value === option ? 4 : 0,
+                          borderLeftColor: value === option ? (theme.background === '#0f172a' ? theme.primary : theme.primaryLight) : 'transparent',
+                          paddingVertical: 12,
+                          paddingHorizontal: 16,
+                          marginHorizontal: 8,
+                          borderRadius: 8,
+                          marginVertical: 4
+                        }
                       ]}
                       onPress={() => {
                         onSelect(option);
@@ -267,7 +251,11 @@ const Dropdown = ({ label, value, options, onSelect, searchable = false, icon })
                       <Text 
                         style={[
                           styles.optionText,
-                          value === option && styles.selectedOptionText
+                          { 
+                            color: value === option ? (theme.background === '#0f172a' ? theme.primaryLight : theme.primary) : (theme.background === '#0f172a' ? theme.text : theme.text),
+                            fontWeight: value === option ? 'bold' : '400',
+                            fontSize: 15
+                          }
                         ]}
                         numberOfLines={1}
                         ellipsizeMode="tail"
@@ -275,24 +263,35 @@ const Dropdown = ({ label, value, options, onSelect, searchable = false, icon })
                         {option}
                       </Text>
                       {value === option && (
-                        <Ionicons name="checkmark-circle" size={20} color={COLORS.primary} />
+                        <Ionicons name="checkmark-circle" size={20} color={theme.primary} />
                       )}
                     </TouchableOpacity>
                   ))
                 ) : (
-                  <View style={styles.noResultsContainer}>
-                    <Ionicons name="search-outline" size={40} color={COLORS.textLight} />
-                    <Text style={styles.noResultsText}>No matching {label.toLowerCase()} found</Text>
+                  <View style={[styles.noResultsContainer, { padding: 24 }]}>
+                    <Ionicons name="search-outline" size={40} color={theme.textSecondary} />
+                    <Text style={[styles.noResultsText, { 
+                      color: theme.textSecondary,
+                      marginTop: 12,
+                      fontSize: 15
+                    }]}>No matching {label.toLowerCase()} found</Text>
                   </View>
                 )}
               </ScrollView>
               
               <TouchableOpacity 
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { 
+                  backgroundColor: theme.primary,
+                  borderWidth: 1,
+                  borderColor: theme.primary
+                }]}
                 onPress={() => setVisible(false)}
                 activeOpacity={0.8}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={[styles.cancelButtonText, { 
+                  color: '#FFFFFF',
+                  fontWeight: '600'
+                }]}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -302,7 +301,42 @@ const Dropdown = ({ label, value, options, onSelect, searchable = false, icon })
   );
 };
 
+// Add a helper for status banners
+const StatusBanner = ({ type, text, theme }) => {
+  let icon, bg, fg, borderColor;
+  if (type === 'warning') {
+    icon = <MaterialIcons name="warning" size={22} color={theme.warning} style={{ marginRight: 10 }} />;
+    bg = theme.warningBackground;
+    fg = theme.warningText;
+    borderColor = theme.warning;
+  } else if (type === 'success') {
+    icon = <MaterialIcons name="check-circle" size={22} color={theme.success} style={{ marginRight: 10 }} />;
+    bg = theme.successBackground;
+    fg = theme.successText;
+    borderColor = theme.success;
+  } else if (type === 'busy') {
+    icon = <MaterialIcons name="schedule" size={22} color={theme.warning} style={{ marginRight: 10 }} />;
+    bg = theme.warningBackground;
+    fg = theme.warningText;
+    borderColor = theme.warning;
+  } else if (type === 'error') {
+    icon = <MaterialIcons name="error-outline" size={22} color={theme.error} style={{ marginRight: 10 }} />;
+    bg = theme.errorBackground;
+    fg = theme.errorText;
+    borderColor = theme.error;
+  }
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: bg, padding: 14, borderRadius: 12, marginBottom: 16, marginHorizontal: 0, borderWidth: 0, borderColor, minHeight: 48 }}>
+      {icon}
+      <Text style={{ color: fg, fontWeight: '600', fontSize: 15, flex: 1 }}>{text}</Text>
+    </View>
+  );
+};
+
 const FacultyAvailabilityScreen = () => {
+  const { theme, isDarkMode, toggleTheme } = useTheme();
+  const navigation = useNavigation();
+
   // State variables for tab selection
   const [activeTab, setActiveTab] = useState('faculty'); // 'faculty' or 'room'
 
@@ -314,35 +348,6 @@ const FacultyAvailabilityScreen = () => {
   const [isQuerying, setIsQuerying] = useState(false);
   const [error, setError] = useState(null);
 
-  // State variables for empty room
-  const [roomDay, setRoomDay] = useState('');
-  const [roomTime, setRoomTime] = useState('');
-  const [roomResult, setRoomResult] = useState(null);
-  const [isQueryingRoom, setIsQueryingRoom] = useState(false);
-  const [roomError, setRoomError] = useState(null);
-
-  // Function to fetch empty room
-  const handleEmptyRoomQuery = async () => {
-    if (!roomDay || !roomTime) return;
-
-    setIsQueryingRoom(true);
-    setRoomError(null);
-    setRoomResult(null);
-    
-    try {
-      const response = await fetch(`https://faculty-availability-api.onrender.com/empty-rooms/?day=${roomDay}&time=${roomTime}`);
-      if (!response.ok) throw new Error(`API error: ${response.status}`);
-      
-      const data = await response.json();
-      setRoomResult(data);
-    } catch (error) {
-      console.error('Error in room query:', error);
-      setRoomError(`Error fetching room data: ${error.message}. Please try again later.`);
-    } finally {
-      setIsQueryingRoom(false);
-    }
-  };
-  
   // New state variables for faculty list
   const [facultyList, setFacultyList] = useState([]);
   const [isLoadingFaculty, setIsLoadingFaculty] = useState(true);
@@ -393,22 +398,22 @@ const FacultyAvailabilityScreen = () => {
   const getStatusBackground = (result) => {
     if (!result) return null;
     if (result.includes('can meet')) {
-      return COLORS.successGradient;
+      return theme.successGradient;
     } else if (result.includes('busy')) {
-      return COLORS.warningGradient;
+      return theme.warningGradient;
     } else {
-      return COLORS.errorGradient;
+      return theme.errorGradient;
     }
   };
 
   const getStatusIcon = (result) => {
     if (!result) return null;
     if (result.includes('available')) {
-      return <MaterialCommunityIcons name="account-check" size={24} color={COLORS.secondary} />;
+      return <MaterialCommunityIcons name="account-check" size={24} color={theme.secondary} />;
     } else if (result.includes('busy')) {
-      return <MaterialCommunityIcons name="account-clock" size={24} color={COLORS.secondary} />;
+      return <MaterialCommunityIcons name="account-clock" size={24} color={theme.secondary} />;
     } else {
-      return <MaterialCommunityIcons name="account-cancel" size={24} color={COLORS.secondary} />;
+      return <MaterialCommunityIcons name="account-cancel" size={24} color={theme.secondary} />;
     }
   };
 
@@ -416,409 +421,159 @@ const FacultyAvailabilityScreen = () => {
   const statusIcon = getStatusIcon(queryResult);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={COLORS.primary} barStyle="light-content" />
-      
-      <LinearGradient
-        colors={COLORS.primaryGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
-      >
-        <Text style={styles.headerTitle}>Availability Checker</Text>
-      </LinearGradient>
-      
-      {/* Tab Navigation */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'faculty' && styles.activeTab]}
-          onPress={() => setActiveTab('faculty')}
-        >
-          <Text style={[styles.tabText, activeTab === 'faculty' && styles.activeTabText]}>Faculty Availability</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+      <StatusBar backgroundColor={theme.background} barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+      {/* Header */}
+      <View style={{ backgroundColor: theme.surface, paddingTop: 18, paddingBottom: 12, paddingHorizontal: 0, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: theme.border, flexDirection: 'row', justifyContent: 'center' }}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ position: 'absolute', left: 18, top: 18, zIndex: 2 }}>
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'room' && styles.activeTab]}
-          onPress={() => setActiveTab('room')}
-        >
-          <Text style={[styles.tabText, activeTab === 'room' && styles.activeTabText]}>Empty Room</Text>
-        </TouchableOpacity>
+        <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text, textAlign: 'center', flex: 1 }}>Availability Checker</Text>
       </View>
+      <ScrollView contentContainerStyle={{ padding: 0, backgroundColor: theme.background, minHeight: '100%' }}>
+        {/* Info/alert message */}
+        <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', backgroundColor: theme.surface, borderRadius: 12, padding: 10, marginBottom: 18 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: theme.textSecondary, fontSize: 15, fontWeight: '400', marginBottom: 0, marginLeft: 0 }}>
+                Check faculty availability for meetings and consultations
+              </Text>
+            </View>
+          </View>
+          {/* Warning banner if not all fields are selected */}
+          {(!selectedFaculty || !selectedDay || !selectedTime) && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.warningBackground, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 14, marginBottom: 18 }}>
+              <MaterialIcons name="warning" size={22} color={theme.warning} style={{ marginRight: 10 }} />
+              <Text style={{ color: theme.warningText, fontWeight: '600', fontSize: 15, flex: 1 }}>
+              Any <Text style={styles.highlightedText}>unavailability of faculty </Text>due to any unforeseen reasons like <Text style={styles.highlightedText}>leave or meetings </Text>will not be reflected here
 
-      <LinearGradient
-        colors={COLORS.backgroundGradient}
-        style={styles.backgroundGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-      >
-        <ScrollView 
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollViewContent}
-          showsVerticalScrollIndicator={false}
-        >
+              </Text>
+            </View>
+          )}
+        </View>
+        {/* Card for dropdowns and search */}
+        <View style={{ backgroundColor: theme.surface, borderRadius: 18, marginHorizontal: 18, padding: 18, marginBottom: 18, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } }}>
           
-          {/* Faculty Availability Query Interface */}
-          {activeTab === 'faculty' && (
-            <Card style={styles.queryContainer}>
-              <View style={styles.noticeContainer}>
-  <Ionicons name="information-circle" size={20} color={COLORS.primary} />
-  <Text style={styles.noticeText}>
-    Any <Text style={styles.highlightedText}>unavailability of faculty </Text>due to any unforeseen reasons like <Text style={styles.highlightedText}>leave or meetings </Text>will not be reflected here
-  </Text>
-</View>
-            <View style={styles.queryTitleContainer}>
-              <MaterialCommunityIcons name="account-search" size={24} color={COLORS.primary} style={styles.queryTitleIcon} />
-              <Text style={styles.queryTitle}>Find Faculty Availability</Text>
-            </View>
-            
-            <Text style={styles.querySubtitle}>Where can I meet</Text>
-            
-            <View style={styles.queryForm}>
-              {/* Faculty Dropdown with Loading State */}
-              {isLoadingFaculty ? (
-                <View style={styles.loadingContainer}>
-                  <View style={styles.shimmerContainer}>
-                    <LinearGradient
-                      colors={COLORS.shimmer}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.shimmer}
-                    />
-                  </View>
-                  <Text style={styles.loadingText}>Loading faculty list...</Text>
-                </View>
-              ) : facultyError ? (
-                <View style={styles.errorInfoContainer}>
-                  <MaterialIcons name="error-outline" size={24} color={COLORS.error} style={styles.errorInfoIcon} />
-                  <Text style={styles.errorInfoText}>{facultyError}</Text>
-                  <TouchableOpacity 
-                    style={styles.retryButton}
-                    onPress={() => {
-                      // Reset faculty loading states and trigger useEffect again
-                      setFacultyList([]);
-                      setIsLoadingFaculty(true);
-                      setFacultyError(null);
-                      fetchFacultyList()
-                        .then(list => {
-                          setFacultyList(list);
-                          setFacultyError(null);
-                        })
-                        .catch(err => {
-                          setFacultyError('Failed to load faculty list. Please try again.');
-                        })
-                        .finally(() => {
-                          setIsLoadingFaculty(false);
-                        });
-                    }}
-                  >
-                    <Text style={styles.retryButtonText}>Retry</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <Dropdown
-                  label="Faculty"
-                  value={selectedFaculty}
-                  options={facultyList}
-                  onSelect={setSelectedFaculty}
-                  searchable={true}
-                  icon={<MaterialCommunityIcons name="account-tie" size={18} color={COLORS.primary} />}
-                />
-              )}
-              
-              <Text style={styles.queryText}>on</Text>
-              
-              <Dropdown
-                label="Day"
-                value={selectedDay}
-                options={WEEK_DAYS}
-                onSelect={setSelectedDay}
-                icon={<MaterialCommunityIcons name="calendar-week" size={18} color={COLORS.primary} />}
-              />
-              
-              <Text style={styles.queryText}>after</Text>
-              
-              <Dropdown
-                label="Time"
-                value={selectedTime}
-                options={TIME_SLOTS}
-                onSelect={setSelectedTime}
-                icon={<MaterialCommunityIcons name="clock-outline" size={18} color={COLORS.primary} />}
-              />
-              
-              <TouchableOpacity
-                style={[
-                  styles.queryButtonContainer,
-                  (!selectedFaculty || !selectedDay || !selectedTime || isLoadingFaculty) && styles.queryButtonDisabled
-                ]}
-                onPress={handleFacultyQuery}
-                disabled={!selectedFaculty || !selectedDay || !selectedTime || isQuerying || isLoadingFaculty}
-                activeOpacity={0.8}
-              >
-                <LinearGradient
-                  colors={(!selectedFaculty || !selectedDay || !selectedTime || isLoadingFaculty) 
-                    ? [COLORS.textLight, COLORS.textLight] 
-                    : COLORS.accentGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.queryButton}
-                >
-                  {isQuerying ? (
-                    <ActivityIndicator size="small" color={COLORS.secondary} />
-                  ) : (
-                    <>
-                      <Feather name="search" size={18} color={COLORS.secondary} style={styles.queryButtonIcon} />
-                      <Text style={styles.queryButtonText}>Search</Text>
-                    </>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-
-            {/* Loading indicator */}
-            {isQuerying && (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="small" color={COLORS.primary} />
-                <Text style={styles.loadingText}>Checking faculty availability...</Text>
-              </View>
-            )}
-
-            {/* Error Message */}
-            {error && (
-              <LinearGradient
-                colors={COLORS.errorGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.errorContainer}
-              >
-                <MaterialIcons name="error-outline" size={22} color={COLORS.secondary} style={styles.errorIcon} />
-                <Text style={styles.errorText}>{error}</Text>
-              </LinearGradient>
-            )}
-
-            {/* Query Result Card */}
-            {(queryResult || error) && (
-              <Card style={styles.resultCard}>
-                {queryResult && (
-                  <LinearGradient
-                    colors={COLORS.successGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.resultHeader}
-                  >
-                    
-                  </LinearGradient>
-                )}
-                <View style={styles.resultContent}>
-                  {queryResult ? (
-                    <LinearGradient
-                      colors={COLORS.successGradient}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.resultContainer}
-                    >
-                      <Text style={[styles.resultText, styles.resultTextLight]}>{queryResult}</Text>
-                    </LinearGradient>
-                  ) : error ? (
-                    <View style={styles.errorContainer}>
-                      <MaterialIcons name="error-outline" size={24} color={COLORS.error} />
-                      <Text style={styles.errorText}>{error}</Text>
-                    </View>
-                  ) : null}
-                </View>
-              </Card>
-            )}
-            </Card>
-          )}
-
-          {/* Empty Room Query Interface */}
-          {activeTab === 'room' && (
-            <Card style={styles.queryContainer}>
-              <View style={styles.queryTitleContainer}>
-                <MaterialCommunityIcons name="door-open" size={24} color={COLORS.primary} style={styles.queryTitleIcon} />
-                <Text style={styles.queryTitle}>Find Empty Room</Text>
-              </View>
-
-              <View style={styles.queryForm}>
-                <Dropdown
-                  label="Day"
-                  value={roomDay}
-                  options={WEEK_DAYS}
-                  onSelect={setRoomDay}
-                  icon={<MaterialCommunityIcons name="calendar-week" size={18} color={COLORS.primary} />}
-                />
-
-                <Dropdown
-                  label="Time"
-                  value={roomTime}
-                  options={TIME_SLOTS}
-                  onSelect={setRoomTime}
-                  icon={<MaterialCommunityIcons name="clock-outline" size={18} color={COLORS.primary} />}
-                />
-
-                <TouchableOpacity
-                  style={[
-                    styles.queryButtonContainer,
-                    (!roomDay || !roomTime) && styles.queryButtonDisabled
-                  ]}
-                  onPress={handleEmptyRoomQuery}
-                  disabled={!roomDay || !roomTime || isQueryingRoom}
-                  activeOpacity={0.8}
-                >
-                  <LinearGradient
-                    colors={(!roomDay || !roomTime) 
-                      ? [COLORS.textLight, COLORS.textLight] 
-                      : COLORS.accentGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.queryButton}
-                  >
-                    {isQueryingRoom ? (
-                      <ActivityIndicator size="small" color={COLORS.secondary} />
-                    ) : (
-                      <>
-                        <Feather name="search" size={18} color={COLORS.secondary} style={styles.queryButtonIcon} />
-                        <Text style={styles.queryButtonText}>Search</Text>
-                      </>
-                    )}
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-
-              {/* Loading indicator */}
-              {isQueryingRoom && (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="small" color={COLORS.primary} />
-                  <Text style={styles.loadingText}>Searching for empty rooms...</Text>
-                </View>
-              )}
-
-              {/* Error Message */}
-              {roomError && (
-                <LinearGradient
-                  colors={COLORS.errorGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.errorContainer}
-                >
-                  <MaterialIcons name="error-outline" size={22} color={COLORS.secondary} style={styles.errorIcon} />
-                  <Text style={styles.errorText}>{roomError}</Text>
-                </LinearGradient>
-              )}
-
-              {/* Room Result */}
-              {roomResult && (
-                <Card style={styles.resultCard}>
-                  <LinearGradient
-                    colors={COLORS.successGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.resultHeader}
-                  >
-                    
-                  </LinearGradient>
-                  <View style={styles.resultContent}>
-                    <LinearGradient
-                      colors={COLORS.successGradient}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.resultContainer}
-                    >
-                      <Text style={[styles.resultText, styles.resultTextLight]}>
-                        Room {roomResult.free_room} is free from {roomResult.time} on {roomResult.day}
-                      </Text>
-                    </LinearGradient>
-                  </View>
-                </Card>
-              )}
-            </Card>
-          )}
-          </ScrollView>
-        </LinearGradient>
-      </SafeAreaView>
-    );
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.keyboardAvoidingView}
+          <Dropdown
+            label="Faculty"
+            value={selectedFaculty}
+            options={facultyList}
+            onSelect={setSelectedFaculty}
+            searchable={true}
+            icon={<MaterialIcons name="account-circle" size={20} color={theme.success} />}
+            theme={theme}
+          />
+          <Dropdown
+            label="Day"
+            value={selectedDay}
+            options={WEEK_DAYS}
+            onSelect={setSelectedDay}
+            icon={<MaterialIcons name="calendar-today" size={20} color={theme.primaryLight} />}
+            theme={theme}
+          />
+          <Dropdown
+            label="Time"
+            value={selectedTime}
+            options={TIME_SLOTS}
+            onSelect={setSelectedTime}
+            icon={<MaterialIcons name="schedule" size={20} color={theme.textSecondary} />}
+            theme={theme}
+          />
+          {/* Search button */}
+          <TouchableOpacity
+            style={{
+              marginTop: 10,
+              borderRadius: 12,
+              overflow: 'hidden',
+              width: '100%',
+              marginBottom: 8,
+              backgroundColor: '#249CA7',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: 48,
+              opacity: 1,
+            }}
+            onPress={() => {
+              if (selectedFaculty && selectedDay && selectedTime && !isQuerying && !isLoadingFaculty) {
+                handleFacultyQuery();
+              }
+            }}
+            activeOpacity={0.8}
           >
-            <ScrollView
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              <Card style={styles.queryCard}>
-                <View style={styles.dropdownsContainer}>
-                  <Dropdown
-                    label="Day"
-                    value={roomDay}
-                    options={WEEK_DAYS}
-                    onSelect={setRoomDay}
-                    icon={<MaterialIcons name="calendar-today" size={20} color={COLORS.textSecondary} />}
-                  />
-                  <Dropdown
-                    label="Time"
-                    value={roomTime}
-                    options={TIME_SLOTS}
-                    onSelect={setRoomTime}
-                    icon={<MaterialIcons name="access-time" size={20} color={COLORS.textSecondary} />}
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.queryButton, (!roomDay || !roomTime) && styles.queryButtonDisabled]}
-                  onPress={handleRoomSearch}
-                  disabled={!roomDay || !roomTime || isSearchingRoom}
-                >
-                  {isSearchingRoom ? (
-                    <ActivityIndicator color={COLORS.secondary} />
-                  ) : (
-                    <>
-                      <MaterialIcons name="search" size={20} color={COLORS.secondary} />
-                      <Text style={styles.queryButtonText}>Search Empty Room</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </Card>
-
-              {/* Room Search Result Card */}
-              {(roomResult || roomError) && (
-                <Card style={styles.resultCard}>
-                  <LinearGradient
-                    colors={COLORS.primaryGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.resultHeader}
-                  >
-                    <View style={styles.resultIconContainer}>
-                      <MaterialIcons name="meeting-room" size={24} color={COLORS.secondary} />
-                    </View>
-                    <Text style={styles.resultHeaderText}>Room Status</Text>
-                  </LinearGradient>
-                  <View style={styles.resultContent}>
-                    {roomResult ? (
-                      <Text style={styles.resultText}>{roomResult}</Text>
-                    ) : roomError ? (
-                      <View style={styles.errorContainer}>
-                        <MaterialIcons name="error-outline" size={24} color={COLORS.error} />
-                        <Text style={styles.errorText}>{roomError}</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                </Card>
-              )}
-            </ScrollView>
-          </KeyboardAvoidingView>
-        
-
+            {isQuerying ? (
+              <ActivityIndicator size="small" color={'#fff'} />
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name="search" size={18} color={'#fff'} style={{ marginRight: 8 }} />
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Search</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+        {/* Status cards */}
+        <View style={{ marginHorizontal: 18 }}>
+          {error && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.errorBackground, borderRadius: 10, paddingVertical: 14, paddingHorizontal: 14, marginBottom: 14 }}>
+              <MaterialIcons name="error-outline" size={22} color={theme.error} style={{ marginRight: 10 }} />
+              <Text style={{ color: theme.errorText, fontWeight: '600', fontSize: 15, flex: 1 }}>{error}</Text>
+            </View>
+          )}
+          {queryResult && (
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor:
+                queryResult.includes('can meet') ? theme.successBackground :
+                queryResult.includes('busy') ? theme.warningBackground :
+                theme.errorBackground,
+              borderRadius: 10,
+              paddingVertical: 14,
+              paddingHorizontal: 14,
+              marginBottom: 14,
+            }}>
+              {queryResult.includes('can meet') && <MaterialIcons name="check-circle" size={22} color={theme.success} style={{ marginRight: 10 }} />}
+              {queryResult.includes('busy') && <MaterialIcons name="schedule" size={22} color={theme.warning} style={{ marginRight: 10 }} />}
+              {!queryResult.includes('can meet') && !queryResult.includes('busy') && <MaterialIcons name="error-outline" size={22} color={theme.error} style={{ marginRight: 10 }} />}
+              <Text style={{
+                color:
+                  queryResult.includes('can meet') ? theme.successText :
+                  queryResult.includes('busy') ? theme.warningText :
+                  theme.errorText,
+                fontWeight: '600',
+                fontSize: 15,
+                flex: 1,
+              }}>{queryResult}</Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
 };
 
 const styles = StyleSheet.create({
-  // Tab styles
+  container: {
+    flex: 1,
+  },
+  header: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: COLORS.secondary,
     paddingHorizontal: 16,
     paddingTop: 8,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.cardBorder,
   },
   tab: {
     flex: 1,
@@ -827,61 +582,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
-  activeTab: {
-    borderBottomColor: COLORS.primary,
-  },
   tabText: {
     fontSize: 14,
     fontWeight: '500',
-    color: COLORS.textSecondary,
-  },
-  activeTabText: {
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
- container: {
-    flex: 1,
-    backgroundColor: COLORS.primary,
+    color: '#64748b',
   },
   backgroundGradient: {
     flex: 1,
   },
-  header: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.secondary,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: COLORS.secondary,
-    opacity: 0.8,
-  } 
-  // Card Styles
-  ,
-  card: {
-    margin: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
-    elevation: 5,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-  },
-  cardGradient: {
-    padding: 16,
-  },
-  // Query Interface Styles
   queryContainer: {
     marginBottom: 8,
   },
@@ -897,12 +605,12 @@ const styles = StyleSheet.create({
   queryTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.primary,
+    color: '#000',
     textAlign: 'center',
   },
   querySubtitle: {
     fontSize: 16,
-    color: COLORS.textSecondary,
+    color: '#475569',
     marginBottom: 12,
     textAlign: 'center',
     fontWeight: '500',
@@ -912,7 +620,7 @@ const styles = StyleSheet.create({
   },
   queryText: {
     fontSize: 16,
-    color: COLORS.textSecondary,
+    color: '#475569',
     marginVertical: 5,
     fontWeight: '500',
     textAlign: 'center',
@@ -922,7 +630,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: 'hidden',
     elevation: 3,
-    shadowColor: COLORS.shadow,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -940,7 +648,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   queryButtonText: {
-    color: COLORS.secondary,
+    color: '#fff',
     fontWeight: '600',
     fontSize: 16,
   },
@@ -950,7 +658,7 @@ const styles = StyleSheet.create({
     width: '100%',
     overflow: 'hidden',
     elevation: 3,
-    shadowColor: COLORS.shadow,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
@@ -973,12 +681,12 @@ const styles = StyleSheet.create({
   },
   resultText: {
     fontSize: 16,
-    color: COLORS.text,
+    color: '#000',
     textAlign: 'center',
     marginVertical: 8,
   },
   resultTextLight: {
-    color: COLORS.secondary,
+    color: '#fff',
   },
   resultContainer: {
     padding: 8,
@@ -987,7 +695,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignSelf: 'center',
     marginVertical: 12,
-    shadowColor: COLORS.shadow,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -1001,50 +709,10 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#2E7D32',
   },
-  // Dropdown Styles
   dropdownContainer: {
     marginBottom: 10,
   },
-  dropdownLabel: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    marginBottom: 6,
-    fontWeight: '500',
-    marginLeft: 4,
-  },
-  dropdownButton: {
-    backgroundColor: COLORS.secondary,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.inputBorder,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-  },
-  dropdownButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  dropdownIcon: {
-    marginRight: 10,
-  },
-  dropdownButtonText: {
-    fontSize: 15,
-    color: COLORS.textLight,
-    flex: 1,
-  },
-  dropdownButtonTextSelected: {
-    color: COLORS.text,
-    fontWeight: '500',
-  },
+  
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1059,12 +727,12 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '90%',
-    backgroundColor: COLORS.secondary,
+    backgroundColor: '#fff',
     borderRadius: 16,
     overflow: 'hidden',
     maxHeight: '75%',
     elevation: 6,
-    shadowColor: COLORS.shadow,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
@@ -1078,7 +746,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.secondary,
+    color: '#000',
     flex: 1,
     textAlign: 'center',
   },
@@ -1092,32 +760,32 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.divider,
+    borderBottomColor: '#e2e8f0',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   selectedOptionItem: {
-    backgroundColor: COLORS.accent + '10', // 10% opacity
+    backgroundColor: '#7c3aed10', // 10% opacity
   },
   optionText: {
     fontSize: 16,
-    color: COLORS.text,
+    color: '#000',
     flex: 1,
   },
   selectedOptionText: {
-    color: COLORS.primary,
+    color: '#7c3aed',
     fontWeight: 'bold',
   },
   cancelButton: {
     margin: 16,
     padding: 14,
-    backgroundColor: COLORS.backgroundDark,
+    backgroundColor: '#1e293b',
     borderRadius: 10,
     alignItems: 'center',
   },
   cancelButtonText: {
-    color: COLORS.text,
+    color: '#fff',
     fontWeight: '600',
     fontSize: 16,
   },
@@ -1132,7 +800,7 @@ const styles = StyleSheet.create({
     height: 20,
     width: 20,
     borderRadius: 10,
-    backgroundColor: COLORS.backgroundDark,
+    backgroundColor: '#e2e8f0',
     overflow: 'hidden',
     position: 'relative',
   },
@@ -1146,7 +814,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginLeft: 10,
     fontSize: 15,
-    color: COLORS.primary,
+    color: '#000',
     fontWeight: '500',
   },
   errorContainer: {
@@ -1160,13 +828,13 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   errorText: {
-    color: COLORS.secondary,
+    color: '#fff',
     fontSize: 14,
     flex: 1,
   },
   errorInfoContainer: {
     padding: 12,
-    backgroundColor: COLORS.errorLight,
+    backgroundColor: '#fee2e2',
     borderRadius: 10,
     marginVertical: 8,
     alignItems: 'center',
@@ -1175,20 +843,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   errorInfoText: {
-    color: COLORS.error,
+    color: '#ef4444',
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 12,
   },
   retryButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: '#7c3aed',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
     alignItems: 'center',
   },
   retryButtonText: {
-    color: COLORS.secondary,
+    color: '#fff',
     fontWeight: '600',
   },
   instructionsContainer: {
@@ -1205,7 +873,7 @@ const styles = StyleSheet.create({
   instructionsTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.primary,
+    color: '#000',
   },
   instructionsContent: {
     paddingLeft: 6,
@@ -1219,12 +887,12 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: COLORS.accent,
+    backgroundColor: '#7c3aed',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
     elevation: 2,
-    shadowColor: COLORS.shadow,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
@@ -1239,31 +907,32 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
+    borderLeftColor: '#7c3aed',
   },
   noticeText: {
     flex: 1,
     marginLeft: 8,
     fontSize: 13,
-    color: COLORS.text,
-  },highlightedText: {
+    color: '#000',
+  },
+  highlightedText: {
     fontWeight: 'bold',
-    color: COLORS.primary,
+    color: '#B7791F',
   },
   instructionNumberText: {
-    color: COLORS.secondary,
+    color: '#fff',
     fontWeight: 'bold',
     fontSize: 14,
   },
   instructionsText: {
     fontSize: 15,
-    color: COLORS.text,
+    color: '#000',
     flex: 1,
     lineHeight: 22,
   },
   searchContainer: {
     flexDirection: 'row',
-    backgroundColor: COLORS.background,
+    backgroundColor: '#f1f5f9',
     borderRadius: 10,
     marginHorizontal: 16,
     marginVertical: 12,
@@ -1271,7 +940,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: COLORS.inputBorder,
+    borderColor: '#cbd5e1',
   },
   searchIcon: {
     marginRight: 10,
@@ -1280,7 +949,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 40,
     fontSize: 16,
-    color: COLORS.text,
+    color: '#000',
   },
   clearButton: {
     padding: 4,
@@ -1291,7 +960,7 @@ const styles = StyleSheet.create({
   },
   noResultsText: {
     fontSize: 16,
-    color: COLORS.textLight,
+    color: '#94a3b8',
     marginTop: 12,
     textAlign: 'center',
   },
@@ -1300,6 +969,25 @@ const styles = StyleSheet.create({
   },
   scrollViewContent: {
     paddingBottom: 20,
+  },
+  resultCard: {
+    margin: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  resultHeader: {
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  resultContent: {
+    padding: 16,
   },
 });
 

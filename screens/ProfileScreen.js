@@ -21,21 +21,27 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
 import { fetchAndCacheTimeTable } from './UserDetailsScreen.js';
+import { useTheme } from '../context/ThemeContext';
+import { FontAwesome5, MaterialCommunityIcons, Ionicons, Feather } from '@expo/vector-icons';
 // Define the color scheme consistent with the app
 const COLORS = {
-  primary: '#1e40af', // Richer blue
-  primaryLight: '#3b82f6', // Lighter blue
-  primaryGradient: ['#1e40af', '#3b82f6'], // Blue gradient
+  primary: '#00b3b3', // Teal for header and highlights
+  primaryLight: '#a7f3f3', // Light teal for gradients
   secondary: '#ffffff', // White
-  accent: '#7c3aed', // Vibrant purple
+  accent: '#7c3aed', // Vibrant purple (for icons if needed)
   text: '#0f172a', // Dark blue-gray for text
-  textSecondary: '#475569', // Gray for secondary text
-  background: '#f1f5f9', // Light gray background
+  textSecondary: '#64748b', // Gray for secondary text
+  background: '#f8fafc', // Light background
+  backgroundDark: '#0f172a', // Dark background
+  cardDark: '#1e293b', // Card background in dark mode
+  cardLight: '#ffffff', // Card background in light mode
   error: '#ef4444', // Red for errors
+  errorLight: '#fee2e2', // Light red for sign out in light mode
   divider: '#e2e8f0', // Light gray for dividers
 };
 
 const ProfileScreen = () => {
+  const { isDarkMode } = useTheme();
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const scaleAnim = React.useRef(new Animated.Value(0.3)).current;
   // Add loading animation refs
@@ -229,43 +235,48 @@ useEffect(() => {
     animateCredits(); // Make sure we start the credits animation
   };
 
-  const profileOptions = [
+  // University Options (use icons as per designer's image)
+  const universityOptions = [
     {
       id: '1',
       title: 'Academic Details',
-      description: 'View and edit your section and year',
-      icon: '📋',
+      icon: <Feather name="edit-3" size={20} color={isDarkMode ? COLORS.primaryLight : COLORS.primary} />,
       action: () => setIsEditing(true)
     },
     {
       id: '2',
       title: 'SIS Portal',
-      description: 'Access your student portal for Grades and Attendance',
-      icon: '👨🏻‍🎓',
+      icon: <FontAwesome5 name="university" size={20} color={isDarkMode ? COLORS.primaryLight : COLORS.primary} />,
       action: () => Linking.openURL('https://student.kalasalingam.ac.in/login')
     },
     {
       id: '3',
       title: 'Hostel Portal',
-      description: 'Access your hostel portal Permissions and Leaves',
-      icon: '🏫',
+      icon: <FontAwesome5 name="building" size={20} color={isDarkMode ? COLORS.primaryLight : COLORS.primary} />,
       action: () => Linking.openURL('https://hostels.kalasalingam.ac.in/')
     },
-   
     {
       id: '4',
       title: 'LMS Portal',
-      description: 'One stop solution for your assignment submissions and recorded classes',
-      icon: '𝑳𝐦𝐬',
+      icon: <MaterialCommunityIcons name="book-open-variant" size={20} color={isDarkMode ? COLORS.primaryLight : COLORS.primary} />,
       action: () => Linking.openURL('https://lms.kalasalingam.ac.in/login/index.php')
     },
-    /*{
+  ];
+
+  // App Info Options
+  const appOptions = [
+    {
       id: '5',
-      title: 'Help & Support',
-      description: 'Get assistance with the app',
-      icon: '❓',
-      action: () => Alert.alert('Help', 'This would open the support section')
-    },*/
+      title: 'Send Feedback',
+      icon: <Feather name="message-square" size={20} color={isDarkMode ? COLORS.primaryLight : COLORS.primary} />,
+      action: handleSendFeedback
+    },
+    {
+      id: '6',
+      title: 'Developer Credits',
+      icon: <Ionicons name="code-slash" size={20} color={isDarkMode ? COLORS.primaryLight : COLORS.primary} />,
+      action: handleShowCredits
+    },
   ];
 
   return (
@@ -346,18 +357,103 @@ useEffect(() => {
   </Animated.View>
 </Modal>
       
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: isDarkMode ? COLORS.backgroundDark : COLORS.background }}>
         <LinearGradient
-          colors={COLORS.primaryGradient}
+          colors={isDarkMode ? ['#1B62B9','#232b47',COLORS.backgroundDark ] : ['#a7f3f3', '#f8fafc',COLORS.background ]}
           start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.header}
-        >
-          <Text style={styles.headerTitle}>My Profile</Text>
-        </LinearGradient>
-        
-        {isEditing && (
-          <>
+          end={{ x: 0, y: 1 }}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 500, zIndex: 0 }}
+        />
+        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingTop: 0, zIndex: 1 }} showsVerticalScrollIndicator={false}>
+          {/* Header */}
+          <View style={{ alignItems: 'center', paddingTop: 32, paddingBottom: 16 }}>
+            <Text style={{ fontSize: 22, fontWeight: 'bold', color: isDarkMode ? COLORS.primary : COLORS.primary, letterSpacing: 0.5 }}>
+              My Profile
+            </Text>
+          </View>
+
+          {/* Profile Card */}
+          <View style={{ alignItems: 'center', marginBottom: 24 }}>
+            <View style={{
+              width: 96,
+              height: 96,
+              borderRadius: 48,
+              overflow: 'hidden',
+              borderWidth: 3,
+              borderColor: isDarkMode ? COLORS.primary : COLORS.primary,
+              marginBottom: 12,
+            }}>
+              <Image
+                source={user?.photoURL ? { uri: user.photoURL } : require('../assets/default-avatar.png')}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="cover"
+              />
+            </View>
+            <Text style={{ fontSize: 20, fontWeight: 'bold', color: isDarkMode ? COLORS.secondary : COLORS.text, marginBottom: 2 }}>
+              {user?.displayName || 'KLU Student'}
+            </Text>
+            <Text style={{ fontSize: 13, color: isDarkMode ? COLORS.textSecondary : '#94a3b8', marginBottom: 6 }}>
+              {user?.email}
+            </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 16, marginBottom: 0 }}>
+              <Text style={{ fontSize: 14, color: isDarkMode ? COLORS.primaryLight : COLORS.primary, fontWeight: '500' }}>
+                Section: <Text style={{ color: isDarkMode ? COLORS.secondary : COLORS.text }}>{section || 'N/A'}</Text>
+              </Text>
+              <Text style={{ fontSize: 14, color: isDarkMode ? COLORS.primaryLight : COLORS.primary, fontWeight: '500' }}>
+                Year: <Text style={{ color: isDarkMode ? COLORS.secondary : COLORS.text }}>{year || 'N/A'}</Text>
+              </Text>
+              <Text style={{ fontSize: 14, color: isDarkMode ? COLORS.primaryLight : COLORS.primary, fontWeight: '500' }}>
+                Semester: <Text style={{ color: isDarkMode ? COLORS.secondary : COLORS.text }}>{semester || 'N/A'}</Text>
+              </Text>
+            </View>
+          </View>
+
+          {/* University Options Section */}
+          <Text style={{ marginLeft: 24, marginBottom: 6, color: isDarkMode ? COLORS.primaryLight : COLORS.primary, fontWeight: '700', fontSize: 15, letterSpacing: 0.2 }}>University Options</Text>
+          <View style={{ marginHorizontal: 18, marginBottom: 18, borderRadius: 16, backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight, padding: 0, overflow: 'hidden' }}>
+            {universityOptions.map((option, idx) => (
+              <TouchableOpacity
+                key={option.id}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: 18,
+                  paddingHorizontal: 18,
+                  borderBottomWidth: idx !== universityOptions.length - 1 ? 1 : 0,
+                  borderBottomColor: isDarkMode ? '#22304a' : COLORS.divider,
+                  backgroundColor: 'transparent',
+                }}
+                onPress={option.action}
+              >
+                <View style={{ width: 28, alignItems: 'center', marginRight: 16 }}>
+                  {option.icon}
+                </View>
+                <Text style={{ fontSize: 16, color: isDarkMode ? COLORS.secondary : COLORS.text, fontWeight: '500', flex: 1 }}>{option.title}</Text>
+                <Text style={{ color: isDarkMode ? COLORS.primaryLight : COLORS.primary, fontSize: 16, fontWeight: 'bold' }}>{'>'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* App Info Section */}
+          <Text style={{ marginLeft: 24, marginBottom: 6, color: isDarkMode ? COLORS.primaryLight : COLORS.primary, fontWeight: '700', fontSize: 15, letterSpacing: 0.2 }}>App Info</Text>
+          <View style={{ marginHorizontal: 18, marginBottom: 18, borderRadius: 16, backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight, padding: 0, overflow: 'hidden' }}>
+            {appOptions.map((option, idx) => (
+              <TouchableOpacity
+                key={option.id}
+                style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 18, paddingHorizontal: 18, borderBottomWidth: idx !== appOptions.length - 1 ? 1 : 0, borderBottomColor: isDarkMode ? '#22304a' : COLORS.divider }}
+                onPress={option.action}
+              >
+                <View style={{ width: 28, alignItems: 'center', marginRight: 16 }}>
+                  {option.icon}
+                </View>
+                <Text style={{ fontSize: 16, color: isDarkMode ? COLORS.secondary : COLORS.text, fontWeight: '500', flex: 1 }}>{option.title}</Text>
+                <Text style={{ color: isDarkMode ? COLORS.primaryLight : COLORS.primary, fontSize: 16, fontWeight: 'bold' }}>{'>'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Academic Details Editing Modal */}
+          {isEditing && (
             <Modal
               animationType="slide"
               transparent={true}
@@ -365,63 +461,94 @@ useEffect(() => {
               onRequestClose={() => !isLoading && setIsEditing(false)}
             >
               <Pressable 
-                style={styles.modalOverlay}
+                style={[styles.modalOverlay, { backgroundColor: isDarkMode ? 'rgba(15,23,42,0.7)' : 'rgba(0,0,0,0.2)' }]}
                 onPress={() => !isLoading && setIsEditing(false)}
               >
-                <View style={styles.modalContainer}>
-                  <Text style={styles.modalTitle}>Edit Academic Details</Text>
-                  
+                <View style={[styles.modalContainer, { backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight }]}> 
+                  <Text style={[styles.modalTitle, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Edit Academic Details</Text>
                   <View style={styles.editContainer}>
                     <View style={styles.inputContainer}>
-                      <Text style={styles.label}>Section</Text>
+                      <Text style={[styles.label, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Section</Text>
                       <TouchableOpacity
-                        style={[styles.dropdownButton, section && styles.dropdownButtonSelected]}
+                        style={[
+                          styles.dropdownButton,
+                          section && styles.dropdownButtonSelected,
+                          {
+                            backgroundColor: isDarkMode ? COLORS.backgroundDark : COLORS.background,
+                            borderColor: section ? (isDarkMode ? COLORS.primaryLight : COLORS.primary) : COLORS.divider,
+                          }
+                        ]}
                         onPress={() => !isLoading && setShowSectionModal(true)}
                         disabled={isLoading}
                       >
-                        <Text style={[styles.dropdownButtonText, !section && styles.placeholderText]}>
+                        <Text style={[
+                          styles.dropdownButtonText,
+                          {
+                            color: section ? (isDarkMode ? COLORS.secondary : COLORS.text) : COLORS.textSecondary,
+                          }
+                        ]}>
                           {section || 'Select your section'}
                         </Text>
                       </TouchableOpacity>
                     </View>
-  
                     <View style={styles.inputContainer}>
-                      <Text style={styles.label}>Year</Text>
+                      <Text style={[styles.label, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Year</Text>
                       <TouchableOpacity
-                        style={[styles.dropdownButton, year && styles.dropdownButtonSelected]}
+                        style={[
+                          styles.dropdownButton,
+                          year && styles.dropdownButtonSelected,
+                          {
+                            backgroundColor: isDarkMode ? COLORS.backgroundDark : COLORS.background,
+                            borderColor: year ? (isDarkMode ? COLORS.primaryLight : COLORS.primary) : COLORS.divider,
+                          }
+                        ]}
                         onPress={() => !isLoading && setShowYearModal(true)}
                         disabled={isLoading}
                       >
-                        <Text style={[styles.dropdownButtonText, !year && styles.placeholderText]}>
+                        <Text style={[
+                          styles.dropdownButtonText,
+                          {
+                            color: year ? (isDarkMode ? COLORS.secondary : COLORS.text) : COLORS.textSecondary,
+                          }
+                        ]}>
                           {year || 'Select your year'}
                         </Text>
                       </TouchableOpacity>
                     </View>
-  
                     <View style={styles.inputContainer}>
-                      <Text style={styles.label}>Semester</Text>
+                      <Text style={[styles.label, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Semester</Text>
                       <TouchableOpacity
-                        style={[styles.dropdownButton, semester && styles.dropdownButtonSelected]}
+                        style={[
+                          styles.dropdownButton,
+                          semester && styles.dropdownButtonSelected,
+                          {
+                            backgroundColor: isDarkMode ? COLORS.backgroundDark : COLORS.background,
+                            borderColor: semester ? (isDarkMode ? COLORS.primaryLight : COLORS.primary) : COLORS.divider,
+                          }
+                        ]}
                         onPress={() => !isLoading && setShowSemesterModal(true)}
                         disabled={isLoading}
                       >
-                        <Text style={[styles.dropdownButtonText, !semester && styles.placeholderText]}>
+                        <Text style={[
+                          styles.dropdownButtonText,
+                          {
+                            color: semester ? (isDarkMode ? COLORS.secondary : COLORS.text) : COLORS.textSecondary,
+                          }
+                        ]}>
                           {semester || 'Select your semester'}
                         </Text>
                       </TouchableOpacity>
                     </View>
-  
                     <View style={styles.buttonContainer}>
                       <TouchableOpacity 
-                        style={[styles.cancelButton, isLoading && styles.disabledButton]}
+                        style={[styles.cancelButton, isLoading && styles.disabledButton, { backgroundColor: isDarkMode ? COLORS.backgroundDark : COLORS.background }]}
                         onPress={() => !isLoading && setIsEditing(false)}
                         disabled={isLoading}
                       >
-                        <Text style={styles.cancelButtonText}>Cancel</Text>
+                        <Text style={[styles.cancelButtonText, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Cancel</Text>
                       </TouchableOpacity>
-                      
                       <TouchableOpacity 
-                        style={[styles.saveButton, isLoading && styles.disabledButton]}
+                        style={[styles.saveButton, isLoading && styles.disabledButton, { backgroundColor: isDarkMode ? COLORS.primary : COLORS.primary }]}
                         onPress={!isLoading ? handleSaveDetails : null}
                         disabled={isLoading}
                       >
@@ -439,7 +566,7 @@ useEffect(() => {
                             <Text style={[styles.saveButtonText, { marginLeft: 10 }]}>Saving...</Text>
                           </Animated.View>
                         ) : (
-                          <Text style={styles.saveButtonText}>Save</Text>
+                          <Text style={[styles.saveButtonText, { color: COLORS.secondary }]}>Save</Text>
                         )}
                       </TouchableOpacity>
                     </View>
@@ -447,181 +574,181 @@ useEffect(() => {
                 </View>
               </Pressable>
             </Modal>
-  
-            <Modal
-              visible={showSectionModal && !isLoading}
-              transparent={true}
-              animationType="fade"
-              onRequestClose={() => setShowSectionModal(false)}
+          )}
+
+          {/* Section Modal */}
+          <Modal
+            visible={showSectionModal && !isLoading}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowSectionModal(false)}
+          >
+            <Pressable 
+              style={[styles.modalOverlay, { backgroundColor: isDarkMode ? 'rgba(15,23,42,0.7)' : 'rgba(0,0,0,0.2)' }]}
+              onPress={() => setShowSectionModal(false)}
             >
-              <Pressable 
-                style={styles.modalOverlay}
-                onPress={() => setShowSectionModal(false)}
-              >
-                <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>Select Section</Text>
-                  <ScrollView style={styles.optionsList}>
-                    {SECTION_OPTIONS.map((option) => (
-                      <TouchableOpacity
-                        key={option}
-                        style={[styles.optionItem, section === option && styles.selectedOption]}
-                        onPress={() => {
-                          setSection(option);
-                          setShowSectionModal(false);
-                        }}
-                      >
-                        <Text style={[styles.optionText, section === option && styles.selectedOptionText]}>
-                          {option}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </Pressable>
-            </Modal>
-  
-            <Modal
-              visible={showSemesterModal && !isLoading}
-              transparent={true}
-              animationType="fade"
-              onRequestClose={() => setShowSemesterModal(false)}
-            >
-              <Pressable 
-                style={styles.modalOverlay}
-                onPress={() => setShowSemesterModal(false)}
-              >
-                <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>Select Semester</Text>
-                  <ScrollView style={styles.optionsList}>
-                    {SEMESTER_OPTIONS.map((option) => (
-                      <TouchableOpacity
-                        key={option}
-                        style={[styles.optionItem, semester === option && styles.selectedOption]}
-                        onPress={() => {
-                          setSemester(option);
-                          setShowSemesterModal(false);
-                        }}
-                      >
-                        <Text style={[styles.optionText, semester === option && styles.selectedOptionText]}>
-                          {option}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </Pressable>
-            </Modal>
-  
-            <Modal
-              visible={showYearModal && !isLoading}
-              transparent={true}
-              animationType="fade"
-              onRequestClose={() => setShowYearModal(false)}
-            >
-              <Pressable 
-                style={styles.modalOverlay}
-                onPress={() => setShowYearModal(false)}
-              >
-                <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>Select Year</Text>
-                  <ScrollView style={styles.optionsList}>
-                    {YEAR_OPTIONS.map((option) => (
-                      <TouchableOpacity
-                        key={option}
-                        style={[styles.optionItem, year === option && styles.selectedOption]}
-                        onPress={() => {
-                          setYear(option);
-                          setShowYearModal(false);
-                        }}
-                      >
-                        <Text style={[styles.optionText, year === option && styles.selectedOptionText]}>
-                          {option}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </Pressable>
-            </Modal>
-          </>
-        )}
-        
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={true}
-          bounces={true}
-          alwaysBounceVertical={true}
-        >
-          <View style={styles.profileHeader}>
-            <Image 
-              source={user?.photoURL ? { uri: user.photoURL } : require('../assets/default-avatar.png')} 
-              style={styles.profileImage}
-            />
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>{user?.displayName || 'KLU Student'}</Text>
-              <Text style={styles.profileEmail}>{user?.email}</Text>
-              <Text style={styles.profileRole}>{user?.providerId === 'google.com' ? 'Google User' : 'Student'}</Text>
-              {section && year && semester && (
-                <View style={styles.academicInfo}>
-                  <Text style={styles.academicInfoText}>Section {section} • Year {year} • {semester} Semester</Text>
-                </View>
-              )}
-            </View>
-          </View>
-  
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>University Options</Text>
-            {profileOptions.map(option => (
-              <TouchableOpacity 
-                key={option.id} 
-                style={styles.optionItem}
-                onPress={option.action}
-              >
-                <View style={styles.optionIcon}>
-                  <Text style={styles.optionIconText}>{option.icon}</Text>
-                </View>
-                <View style={styles.optionInfo}>
-                  <Text style={styles.optionTitle}>{option.title}</Text>
-                  <Text style={styles.optionDescription}>{option.description}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-          
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>App Info</Text>
-            <TouchableOpacity 
-              style={styles.optionItem}
-              onPress={handleSendFeedback}
-            >
-              <View style={styles.optionIcon}>
-                <Text style={styles.optionIconText}>📝</Text>
+              <View style={[styles.modalContent, { backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight }]}> 
+                <Text style={[styles.modalTitle, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Select Section</Text>
+                <ScrollView style={styles.optionsList}>
+                  {SECTION_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[
+                        styles.optionItem,
+                        {
+                          borderBottomColor: isDarkMode ? '#22304a' : COLORS.divider,
+                          backgroundColor: (section === option)
+                            ? (isDarkMode ? COLORS.primary + '55' : COLORS.primaryLight + '55')
+                            : 'transparent',
+                          borderLeftWidth: (section === option) ? 4 : 0,
+                          borderLeftColor: (section === option)
+                            ? (isDarkMode ? COLORS.primary : COLORS.primaryLight)
+                            : 'transparent',
+                        }
+                      ]}
+                      onPress={() => {
+                        setSection(option);
+                        setShowSectionModal(false);
+                      }}
+                    >
+                      <Text style={[
+                        styles.optionText,
+                        {
+                          color: (section === option)
+                            ? (isDarkMode ? COLORS.primaryLight : COLORS.primary)
+                            : (isDarkMode ? COLORS.secondary : COLORS.text),
+                          fontWeight: (section === option) ? 'bold' : 'normal',
+                        }
+                      ]}>
+                        {option}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
-              <View style={styles.optionInfo}>
-                <Text style={styles.optionTitle}>Send Feedback</Text>
-                <Text style={styles.optionDescription}>Help us improve the KARE Bot app</Text>
-              </View>
-            </TouchableOpacity>
-  
-            <TouchableOpacity 
-              style={styles.optionItem}
-              onPress={handleShowCredits}
+            </Pressable>
+          </Modal>
+
+          {/* Year Modal */}
+          <Modal
+            visible={showYearModal && !isLoading}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowYearModal(false)}
+          >
+            <Pressable 
+              style={[styles.modalOverlay, { backgroundColor: isDarkMode ? 'rgba(15,23,42,0.7)' : 'rgba(0,0,0,0.2)' }]}
+              onPress={() => setShowYearModal(false)}
             >
-              <View style={styles.optionIcon}>
-                <Text style={styles.optionIconText}>👨‍💻</Text>
+              <View style={[styles.modalContent, { backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight }]}> 
+                <Text style={[styles.modalTitle, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Select Year</Text>
+                <ScrollView style={styles.optionsList}>
+                  {YEAR_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[
+                        styles.optionItem,
+                        {
+                          borderBottomColor: isDarkMode ? '#22304a' : COLORS.divider,
+                          backgroundColor: (year === option)
+                            ? (isDarkMode ? COLORS.primary + '55' : COLORS.primaryLight + '55')
+                            : 'transparent',
+                          borderLeftWidth: (year === option) ? 4 : 0,
+                          borderLeftColor: (year === option)
+                            ? (isDarkMode ? COLORS.primary : COLORS.primaryLight)
+                            : 'transparent',
+                        }
+                      ]}
+                      onPress={() => {
+                        setYear(option);
+                        setShowYearModal(false);
+                      }}
+                    >
+                      <Text style={[
+                        styles.optionText,
+                        {
+                          color: (year === option)
+                            ? (isDarkMode ? COLORS.primaryLight : COLORS.primary)
+                            : (isDarkMode ? COLORS.secondary : COLORS.text),
+                          fontWeight: (year === option) ? 'bold' : 'normal',
+                        }
+                      ]}>
+                        {option}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
-              <View style={styles.optionInfo}>
-                <Text style={styles.optionTitle}>Developer Credits</Text>
-                <Text style={styles.optionDescription}>Meet the team behind KARE Bot</Text>
+            </Pressable>
+          </Modal>
+
+          {/* Semester Modal */}
+          <Modal
+            visible={showSemesterModal && !isLoading}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowSemesterModal(false)}
+          >
+            <Pressable 
+              style={[styles.modalOverlay, { backgroundColor: isDarkMode ? 'rgba(15,23,42,0.7)' : 'rgba(0,0,0,0.2)' }]}
+              onPress={() => setShowSemesterModal(false)}
+            >
+              <View style={[styles.modalContent, { backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight }]}> 
+                <Text style={[styles.modalTitle, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Select Semester</Text>
+                <ScrollView style={styles.optionsList}>
+                  {SEMESTER_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[
+                        styles.optionItem,
+                        {
+                          borderBottomColor: isDarkMode ? '#22304a' : COLORS.divider,
+                          backgroundColor: (semester === option)
+                            ? (isDarkMode ? COLORS.primary + '55' : COLORS.primaryLight + '55')
+                            : 'transparent',
+                          borderLeftWidth: (semester === option) ? 4 : 0,
+                          borderLeftColor: (semester === option)
+                            ? (isDarkMode ? COLORS.primary : COLORS.primaryLight)
+                            : 'transparent',
+                        }
+                      ]}
+                      onPress={() => {
+                        setSemester(option);
+                        setShowSemesterModal(false);
+                      }}
+                    >
+                      <Text style={[
+                        styles.optionText,
+                        {
+                          color: (semester === option)
+                            ? (isDarkMode ? COLORS.primaryLight : COLORS.primary)
+                            : (isDarkMode ? COLORS.secondary : COLORS.text),
+                          fontWeight: (semester === option) ? 'bold' : 'normal',
+                        }
+                      ]}>
+                        {option}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
-            </TouchableOpacity>
-          </View>
-          
-          <TouchableOpacity 
-            style={styles.signOutButton}
+            </Pressable>
+          </Modal>
+
+          {/* Sign Out Button */}
+          <TouchableOpacity
+            style={{
+              backgroundColor: isDarkMode ? COLORS.error : COLORS.errorLight,
+              borderRadius: 12,
+              marginHorizontal: 18,
+              marginTop: 8,
+              marginBottom: 32,
+              paddingVertical: 16,
+              alignItems: 'center',
+            }}
             onPress={handleSignOut}
           >
-            <Text style={styles.signOutButtonText}>Sign Out</Text>
+            <Text style={{ color: isDarkMode ? COLORS.secondary : COLORS.error, fontWeight: 'bold', fontSize: 16 }}>Sign Out</Text>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
