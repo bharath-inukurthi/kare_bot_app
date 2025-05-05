@@ -9,51 +9,78 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  SafeAreaView
+  SafeAreaView,
+  Animated
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import MCIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useNavigation } from '@react-navigation/native';
 
-// Define the color scheme consistent with the app
-const COLORS = {
-  primary: '#0052cc', // Main blue
-  secondary: '#ffffff', // White
-  accent: '#4c9aff', // Light blue
-  text: '#172b4d', // Dark blue-gray for text
-  background: '#f4f5f7', // Light gray background
-  error: '#ff5630', // Red for errors
-  userBubble: '#0052cc', // User message bubble color
-  botBubble: '#E4E7ED', // Bot message bubble color
+// Exact color palette from the image
+const LIGHT_COLORS = {
+  primary: '#4CDBC4', // for user bubble, send button, bot icon background
+  secondary: '#FFFFFF',
+  accent: '#4CDBC4',
+  text: '#172B4D',
+  background: '#FFFFFF',
+  botBubble: '#E5FAF6',
+  userBubble: '#4CDBC4',
+  chip: '#FFFFFF',
+  chipBorder: '#E5FAF6',
+  chipText: '#4CDBC4',
+  inputBg: '#FFFFFF',
+  inputBorder: '#E5FAF6',
+};
+const DARK_COLORS = {
+  primary: '#4CDBC4', // for user bubble, send button, bot icon background
+  secondary: '#232B3B',
+  accent: '#4CDBC4',
+  text: '#F4F5F7',
+  background: '#101624',
+  botBubble: '#232B3B',
+  userBubble: '#4CDBC4',
+  chip: '#232B3B',
+  chipBorder: '#232B3B',
+  chipText: '#4CDBC4',
+  inputBg: '#232B3B',
+  inputBorder: '#232B3B',
 };
 
 // Initial messages to show in the chat
 const INITIAL_MESSAGES = [
   {
     id: '1',
-    text: 'Hello! I am KARE Bot. How can I help you today?',
+    text: 'Hi! I\'m KARE Bot. How can I help you today?',
     sender: 'bot',
-    timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+    timestamp: '9:00 AM',
   },
 ];
 
 // Mock responses for the chatbot - in a real app, this would be replaced with actual AI
 const BOT_RESPONSES = {
+  'class timings': 'Here are your class timings for today:\n\n• 9:00 AM - Mathematics\n• 11:00 AM - Physics\n• 2:00 PM - Computer Science',
+  'library hours': 'The library is open today from 8:00 AM to 10:00 PM. Would you like to know about other campus facilities?',
   'hello': 'Hi there! How can I assist you with KARE University today?',
   'hi': 'Hello! What can I help you with?',
   'help': 'I can help you with information about courses, faculty, campus facilities, schedules, and more. Just ask!',
-  'faculty': 'You can check faculty availability in the Faculty tab. Is there a specific faculty member you\'re looking for?',
-  'course': 'KARE University offers various courses across Computer Science, Electronics, Mathematics, Physics, Chemistry, and Engineering departments. Which department are you interested in?',
-  'admission': 'For admission inquiries, please provide your specific question or visit our website at klu.ac.in/admissions',
-  'schedule': 'Class schedules are available on the university portal. You can log in with your student credentials to view your personalized schedule.',
-  'exam': 'Examination schedules are typically posted 2 weeks before the exam period. You can check the academic calendar on the university portal.',
-  'location': 'Kalasalingam University is located in Krishnankoil, Tamil Nadu, India.',
-  'contact': 'You can contact the university at +91-XX-XXXXXXXX or email at info@klu.ac.in',
   'default': 'I\'m not sure about that. Could you please rephrase or ask something else about KARE University?'
 };
+
+const SUGGESTIONS = [
+  'Class timings?',
+  'Exam dates?',
+  'Campus map',
+];
 
 const ChatBotScreen = () => {
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false); // Theme toggle for demo
   const flatListRef = useRef(null);
+  const COLORS = isDarkMode ? DARK_COLORS : LIGHT_COLORS;
+  const navigation = useNavigation();
+  const headerTextColor = isDarkMode ? '#fff' : '#000';
 
   // Scroll to the bottom of the chat when new messages are added
   useEffect(() => {
@@ -71,7 +98,7 @@ const ChatBotScreen = () => {
       id: Date.now().toString(),
       text: inputText.trim(),
       sender: 'user',
-      timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+      timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
     };
 
     setMessages(prevMessages => [...prevMessages, userMessage]);
@@ -84,7 +111,7 @@ const ChatBotScreen = () => {
         id: (Date.now() + 1).toString(),
         text: getBotResponse(inputText.trim().toLowerCase()),
         sender: 'bot',
-        timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+        timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
       };
 
       setMessages(prevMessages => [...prevMessages, botMessage]);
@@ -106,25 +133,31 @@ const ChatBotScreen = () => {
   // Render an individual message
   const renderMessage = ({ item }) => {
     const isUser = item.sender === 'user';
-    
     return (
       <View style={[
-        styles.messageContainer,
-        isUser ? styles.userMessageContainer : styles.botMessageContainer
+        styles.messageRow,
+        isUser ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }
       ]}>
+        {!isUser && (
+          <View style={[styles.botIconCircle, { backgroundColor: COLORS.primary }]}> 
+            <MCIcon name="robot-outline" size={22} color={'#fff'} />
+          </View>
+        )}
         <View style={[
-          styles.messageBubble,
-          isUser ? styles.userBubble : styles.botBubble
+          isUser ? styles.userBubble : styles.messageBubble,
+          isUser
+            ? { backgroundColor: COLORS.userBubble, marginLeft: 40 }
+            : { backgroundColor: COLORS.botBubble, borderBottomLeftRadius: 4, marginRight: 8 }
         ]}>
           <Text style={[
             styles.messageText,
-            isUser ? styles.userMessageText : styles.botMessageText
+            isUser ? { color: '#fff' } : { color: COLORS.text }
           ]}>
             {item.text}
           </Text>
           <Text style={[
             styles.timestampText,
-            isUser ? styles.userTimestampText : styles.botTimestampText
+            isUser ? { color: 'rgba(23,43,77,0.5)', textAlign: 'right' } : { color: 'rgba(23,43,77,0.5)', textAlign: 'right' }
           ]}>
             {item.timestamp}
           </Text>
@@ -138,19 +171,42 @@ const ChatBotScreen = () => {
     if (!isTyping) return null;
 
     return (
-      <View style={styles.typingContainer}>
-        <View style={styles.typingBubble}>
-          <Text style={styles.typingText}>KARE Bot is typing</Text>
-          <ActivityIndicator size="small" color={COLORS.primary} style={styles.typingIndicator} />
+      <View style={[styles.messageRow, { justifyContent: 'flex-start' }]}> 
+        <View style={[styles.botIconCircle, { backgroundColor: COLORS.primary }]}> 
+          <MCIcon name="robot-outline" size={22} color={'#fff'} />
+        </View>
+        <View style={[styles.messageBubble, { backgroundColor: COLORS.botBubble, borderBottomLeftRadius: 4, marginRight: 8 }]}> 
+          <View style={styles.typingDotsContainer}>
+            <View style={[styles.typingDot, { backgroundColor: COLORS.primary }]} />
+            <View style={[styles.typingDot, { backgroundColor: COLORS.primary, opacity: 0.7 }]} />
+            <View style={[styles.typingDot, { backgroundColor: COLORS.primary, opacity: 0.4 }]} />
+          </View>
         </View>
       </View>
     );
   };
 
+  const handleSuggestionPress = (suggestion) => {
+    setInputText(suggestion);
+  };
+
+  // Height of the bottom bar (suggestions + input bar)
+  const BOTTOM_BAR_HEIGHT = 110;
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>KARE Bot</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: COLORS.background }]}>
+      {/* Header with back and history icons */}
+      <View style={[styles.header, { backgroundColor: COLORS.background, borderBottomColor: COLORS.inputBorder }]}>
+        <TouchableOpacity style={styles.headerIcon} onPress={() => navigation.goBack()}>
+          <Icon name="arrow-back" size={26} color={headerTextColor} />
+        </TouchableOpacity>
+        <View style={styles.headerTitleContainer}>
+          <Text style={[styles.headerTitle, { color: headerTextColor }]}>Ask KARE</Text>
+          <Text style={[styles.headerSubtitle, { color: headerTextColor, opacity: 0.7 }]}>Get quick answers about campus</Text>
+        </View>
+        <TouchableOpacity style={styles.headerIcon} onPress={() => {/* show history */}}>
+          <Icon name="history" size={26} color={headerTextColor} />
+        </TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView
@@ -164,36 +220,70 @@ const ChatBotScreen = () => {
           data={messages}
           renderItem={renderMessage}
           keyExtractor={item => item.id}
-          contentContainerStyle={styles.messagesList}
+          contentContainerStyle={[styles.messagesList, { paddingBottom: BOTTOM_BAR_HEIGHT }]}
           showsVerticalScrollIndicator={false}
           ListFooterComponent={renderTypingIndicator}
           onLayout={() => flatListRef.current?.scrollToEnd({animated: true})}
           ListFooterComponentStyle={{paddingBottom: 16}}
           keyboardShouldPersistTaps="handled"
         />
+      </KeyboardAvoidingView>
 
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Type a message..."
-            value={inputText}
-            onChangeText={setInputText}
-            multiline
-            maxLength={500}
-            onFocus={() => flatListRef.current?.scrollToEnd({animated: true})}
+      {/* Bottom fixed suggestion chips and input bar */}
+      <View style={styles.bottomBarWrapper}>
+        {/* Suggestion Chips */}
+        <View style={styles.suggestionsContainer}>
+          <FlatList
+            data={SUGGESTIONS}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item, idx) => idx.toString()}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[styles.suggestionChip, { backgroundColor: COLORS.chip, borderColor: COLORS.chipBorder }]}
+                onPress={() => handleSuggestionPress(item)}
+              >
+                <Text style={[styles.suggestionChipText, { color: COLORS.chipText }]}>{item}</Text>
+              </TouchableOpacity>
+            )}
+            contentContainerStyle={{ paddingHorizontal: 10 }}
           />
+        </View>
+        {/* Input Bar */}
+        <View style={styles.inputBarWrapper}>
+          <View style={[
+            styles.inputBar,
+            { backgroundColor: isDarkMode ? '#232B3B' : '#F4F8FB' }
+          ]}>
+            <TextInput
+              style={[
+                styles.input,
+                { color: COLORS.text, backgroundColor: 'transparent' }
+              ]}
+              placeholder="Ask a question..."
+              placeholderTextColor={isDarkMode ? '#6C7A89' : '#B0BEC5'}
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+              maxLength={500}
+              onFocus={() => flatListRef.current?.scrollToEnd({animated: true})}
+            />
+          </View>
           <TouchableOpacity
             style={[
               styles.sendButton,
-              inputText.trim() === '' && styles.sendButtonDisabled
+              inputText.trim() === '' && styles.sendButtonDisabled,
+              { backgroundColor: COLORS.primary }
             ]}
             onPress={handleSendMessage}
             disabled={inputText.trim() === ''}
           >
-            <Text style={styles.sendButtonText}>Send</Text>
+            <Icon name="send" size={26} color={'#fff'} />
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
+
+    
     </SafeAreaView>
   );
 };
@@ -201,140 +291,176 @@ const ChatBotScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    elevation: 0,
+    zIndex: 10,
+  },
+  headerIcon: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.secondary,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    marginTop: 2,
   },
   keyboardAvoidView: {
     flex: 1,
     position: 'relative',
+    justifyContent: 'flex-end',
   },
   messagesList: {
     paddingHorizontal: 16,
-    paddingBottom: 120,
+    paddingBottom: 0,
   },
-  messageContainer: {
+  messageRow: {
     marginVertical: 5,
     flexDirection: 'row',
+    alignItems: 'flex-end',
   },
-  userMessageContainer: {
-    justifyContent: 'flex-end',
-  },
-  botMessageContainer: {
-    justifyContent: 'flex-start',
+  botIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
   messageBubble: {
     maxWidth: '80%',
-    borderRadius: 16,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 10,
     marginBottom: 2,
   },
   userBubble: {
-    backgroundColor: COLORS.userBubble,
+    maxWidth: '80%',
+    backgroundColor: LIGHT_COLORS.userBubble,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 16,
     borderBottomRightRadius: 4,
-  },
-  botBubble: {
-    backgroundColor: COLORS.botBubble,
-    borderBottomLeftRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 2,
   },
   messageText: {
     fontSize: 16,
     lineHeight: 22,
   },
-  userMessageText: {
-    color: COLORS.secondary,
-  },
-  botMessageText: {
-    color: COLORS.text,
-  },
   timestampText: {
     fontSize: 10,
     marginTop: 4,
   },
-  userTimestampText: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    textAlign: 'right',
-  },
-  botTimestampText: {
-    color: 'rgba(23, 43, 77, 0.5)',
-    textAlign: 'right',
-  },
-  typingContainer: {
-    marginVertical: 5,
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-  },
-  typingBubble: {
-    backgroundColor: COLORS.botBubble,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomLeftRadius: 4,
+  typingDotsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    height: 16,
+    marginTop: 2,
   },
-  typingText: {
-    fontSize: 14,
-    color: COLORS.text,
-    opacity: 0.7,
-    marginRight: 5,
+  typingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginHorizontal: 2,
   },
-  typingIndicator: {
-    marginLeft: 5,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-    paddingBottom: 10,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.1)',
-    backgroundColor: COLORS.secondary,
-    zIndex: 999,
-    elevation: 8,
+  bottomBarWrapper: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 50 : 50,
     left: 0,
     right: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    bottom: 0,
+    backgroundColor: 'transparent',
+    zIndex: 999,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    justifyContent: 'flex-end',
+  },
+  suggestionsContainer: {
+    flexDirection: 'row',
+    paddingVertical: 6,
+    borderTopWidth: 0,
+    backgroundColor: 'transparent',
+    marginBottom: 70,
+    zIndex: 10,
+  },
+  suggestionChip: {
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginHorizontal: 4,
+    marginVertical: 2,
+    borderWidth: 1.5,
+  },
+  suggestionChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  inputBarWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingBottom: 18,
+    paddingTop: 8,
+    backgroundColor: 'transparent',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 999,
+  },
+  inputBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    marginRight: 35, // let send button overlap
   },
   input: {
     flex: 1,
-    backgroundColor: COLORS.background,
-    borderRadius: 20,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
+    fontSize: 16,
+    minHeight: 24,
     maxHeight: 100,
+    paddingVertical: 0,
+    backgroundColor: 'transparent',
   },
   sendButton: {
-    marginLeft: 10,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -22, // overlap input bar
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.10,
+    shadowRadius: 2,
+    elevation: 2,
+    opacity: 1.0,
   },
   sendButtonDisabled: {
-    backgroundColor: COLORS.accent,
-    opacity: 0.5,
-  },
-  sendButtonText: {
-    color: COLORS.secondary,
-    fontWeight: '600',
+    opacity: 1.0,
   },
 });
 

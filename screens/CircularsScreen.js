@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -11,14 +10,17 @@ import {
   StatusBar,
   SectionList,
   Animated,
+  FlatList,
+  SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Linking, Alert } from 'react-native';
 import { COLORS } from '../constants/Colors';
 import { fetch } from 'expo/fetch';
+import { useTheme } from '../context/ThemeContext';
 
-const CircularsScreen = () => {
+const CircularsScreen = ({ navigation }) => {
   const [circulars, setCirculars] = useState([]);
   const [originalData, setOriginalData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +39,8 @@ const CircularsScreen = () => {
   const fetchControllerRef = useRef(null);
   const receivedCount = useRef(0);
   const dataByGroupRef = useRef({});
+
+  const { isDarkMode, theme } = useTheme();
 
   // Helper function to parse date string in "month_name-year-day" format
   const parseDateString = (dateString) => {
@@ -382,26 +386,86 @@ const CircularsScreen = () => {
   const toggleSortOrder = () => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
 
   const renderSectionHeader = ({ section }) => (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{section.title}</Text>
-    </View>
+    <Text 
+      style={[
+        styles.monthHeader,
+        isDarkMode && styles.monthHeaderDark
+      ]}
+    >
+      {section.title}
+    </Text>
   );
 
   const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.circularCard}
-      onPress={() => Linking.openURL(item.url)}
+    <TouchableOpacity 
+      style={[
+        styles.circularItem,
+        isDarkMode && styles.circularItemDark
+      ]}
     >
-      <View style={styles.iconContainer}>
-        <Ionicons name="document-text" size={32} color={COLORS.primary} />
+      <View style={styles.circularContent}>
+        <Text 
+          style={[
+            styles.circularTitle,
+            isDarkMode && styles.circularTitleDark
+          ]} 
+          numberOfLines={1}
+        >
+          {item.filename}
+        </Text>
+        <Text 
+          style={[
+            styles.circularDate,
+            isDarkMode && styles.circularDateDark
+          ]}
+        >
+          {item.date}
+        </Text>
       </View>
-      <View style={styles.circularInfo}>
-        <Text style={styles.circularTitle}>{item.filename}</Text>
-        <Text style={styles.circularDate}>{item.date}</Text>
+      <View style={styles.tagContainer}>
+        
+        <Ionicons 
+          name="chevron-forward" 
+          size={16} 
+          color={isDarkMode ? '#4A4A4A' : '#DEDEDE'} 
+        />
       </View>
-      <Ionicons name="chevron-forward" size={24} color={COLORS.primary} />
     </TouchableOpacity>
   );
+
+  const getStatusStyle = (status) => {
+    switch(status) {
+      case 'Exam':
+        return styles.statusExam;
+      case 'Academic':
+        return styles.statusAcademic;
+      case 'Event':
+        return styles.statusEvent;
+      case 'Research':
+        return styles.statusResearch;
+      case 'Notice':
+        return styles.statusNotice;
+      default:
+        return styles.statusGeneral;
+    }
+  };
+
+  const getStatusTextStyle = (status) => {
+    switch(status) {
+      case 'Exam':
+        return styles.statusExamText;
+      case 'Academic':
+        return styles.statusAcademicText;
+      case 'Event':
+        return styles.statusEventText;
+      case 'Research':
+        return styles.statusResearchText;
+      case 'Notice':
+        return styles.statusNoticeText;
+      default:
+        return styles.statusGeneralText;
+    }
+  };
 
   const renderEmptyList = () => (
     <View style={styles.emptyContainer}>
@@ -413,83 +477,161 @@ const CircularsScreen = () => {
   );
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
-      <LinearGradient
-        colors={[COLORS.primary, COLORS.primary]}
-        style={styles.header}
-      >
-        <Text style={styles.headerTitle}>Circulars</Text>
-        <Text style={styles.headerSubtitle}>Latest updates and notifications</Text>
-      </LinearGradient>
+    <SafeAreaView style={[
+      styles.container,
+      isDarkMode && styles.containerDark
+    ]}>
+      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+      
+      {/* Header */}
+      <View style={{
+        paddingTop: Platform.OS === 'ios' ? 30 : 15,
+        paddingBottom: 0,
+        paddingHorizontal: 10,
+        backgroundColor: isDarkMode ? (theme.background || '#101828') : '#fff'
+      }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4 }}>
+            <Ionicons name="arrow-back" size={26} color={isDarkMode ? '#fff' : '#0F172A'} />
+          </TouchableOpacity>
+          <Text style={{
+            fontSize: 24,
+            fontWeight: 'bold',
+            color: isDarkMode ? '#fff' : '#0F172A',
+            textAlign: 'center',
+            flex: 1
+          }}>
+            Circulars
+          </Text>
+          <View style={{ width: 34 }} />
+        </View>
+        <Text style={{
+          color: isDarkMode ? '#fff' : '#64748B',
+          fontSize: 15,
+          marginTop: 6,
+          marginBottom: 0,
+          textAlign: 'center'
+        }}>
+          University announcements & notices
+        </Text>
+      </View>
 
-      <View>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search circulars..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholderTextColor={COLORS.textSecondary}
-          editable={!initialLoading}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity
-            style={styles.clearSearchButton}
-            onPress={() => setSearchQuery('')}
-            disabled={initialLoading}
-          >
-            <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-        )}
-        <View style={styles.sortOptions}>
-          <TouchableOpacity
-            style={styles.sortButton}
-            onPress={toggleSortType}
-            disabled={initialLoading}
-          >
-            <Ionicons
-              name={sortType === 'date' ? 'calendar' : 'text'}
-              size={20}
-              color={COLORS.primary}
-            />
-            <Text style={styles.sortButtonText}>
-              {sortType === 'date' ? 'Date' : 'Name'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.sortButton}
-            onPress={toggleSortOrder}
-            disabled={initialLoading}
-          >
-            <Ionicons
-              name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'}
-              size={20}
-              color={COLORS.primary}
-            />
-            <Text style={styles.sortButtonText}>
-              {sortOrder === 'asc' ? 'Ascending' : 'Descending'}
-            </Text>
-          </TouchableOpacity>
+      {/* Search Bar */}
+      <View style={{ paddingHorizontal: 20, marginTop: 18, marginBottom: 8 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: isDarkMode ? '#232B3A' : '#F3F6FA',
+            borderRadius: 12,
+            paddingHorizontal: 14,
+            height: 44,
+          }}
+        >
+          <Ionicons
+            name="search"
+            size={20}
+            color={isDarkMode ? '#fff' : '#64748B'}
+            style={{ marginRight: 8 }}
+          />
+          <TextInput
+            style={{
+              flex: 1,
+              fontSize: 16,
+              color: isDarkMode ? '#fff' : '#0F172A',
+              backgroundColor: 'transparent',
+            }}
+            placeholder="Search circulars..."
+            placeholderTextColor={isDarkMode ? '#A0AEC0' : '#64748B'}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons 
+                name="close-circle" 
+                size={20} 
+                color={isDarkMode ? '#A0AEC0' : '#64748B'} 
+              />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
-      {/* Main content with SectionList */}
+      {/* Filter/Sort Buttons */}
+      <View style={{
+        flexDirection: 'row',
+        gap: 6,
+        marginBottom: 8,
+        paddingHorizontal: 10,
+      }}>
+        {/* Group 1: Date/Name */}
+        <View style={{
+          flexDirection: 'row',
+          backgroundColor: isDarkMode ? '#232B3A' : '#E6F8F7',
+          borderRadius: 12,
+          padding: 4,
+          marginRight: 12,
+        }}>
+          <SortButton
+            label="Date"
+            active={sortType === 'date'}
+            onPress={() => setSortType('date')}
+            style={{ borderTopRightRadius: 5, borderBottomRightRadius: 5 }}
+            isDarkMode={isDarkMode}
+            theme={theme}
+          />
+          <SortButton
+            label="Name"
+            active={sortType === 'name'}
+            onPress={() => setSortType('name')}
+            style={{ borderTopLeftRadius: 5, borderBottomLeftRadius: 5, marginRight: 0 }}
+            isDarkMode={isDarkMode}
+            theme={theme}
+          />
+        </View>
+        {/* Group 2: Asc/Desc */}
+        <View style={{
+          flexDirection: 'row',
+          backgroundColor: isDarkMode ? '#232B3A' : '#E6F8F7',
+          borderRadius: 12,
+          padding: 4,
+        }}>
+          <SortButton
+            label="Asc"
+            active={sortOrder === 'asc'}
+            onPress={() => setSortOrder('asc')}
+            style={{ borderTopRightRadius: 5, borderBottomRightRadius: 5 }}
+            isDarkMode={isDarkMode}
+            theme={theme}
+          />
+          <SortButton
+            label="Desc"
+            active={sortOrder === 'desc'}
+            onPress={() => setSortOrder('desc')}
+            style={{ borderTopLeftRadius: 5, borderBottomLeftRadius: 5, marginRight: 0 }}
+            isDarkMode={isDarkMode}
+            theme={theme}
+          />
+        </View>
+      </View>
+
       <SectionList
         sections={circulars}
-        keyExtractor={(item, index) => `${item.url}-${index}`}
         renderItem={renderItem}
         renderSectionHeader={renderSectionHeader}
+        keyExtractor={(item, index) => item.url || `circular-${index}`}
         contentContainerStyle={styles.listContainer}
-        stickySectionHeadersEnabled={true}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={!loading ? renderEmptyList : null}
+        stickySectionHeadersEnabled={false}
       />
 
-      {/* Full-screen loading overlay (shown until 5 items are received) */}
       {showFullScreenLoading && (
         <Animated.View style={[styles.loadingOverlay, { opacity: loadingOpacity }]}>
           <View style={styles.loadingIndicator}>
             <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={{ marginTop: 10, color: COLORS.text }}>
+            <Text style={styles.loadingText}>
               {loadingProgress > 0
                 ? `Loaded ${loadingProgress} items...`
                 : 'Connecting to server...'}
@@ -501,7 +643,6 @@ const CircularsScreen = () => {
         </Animated.View>
       )}
 
-      {/* Side loading indicator (shown after 5 items are received) */}
       {loading && !showFullScreenLoading && originalData.length > 0 && (
         <View style={styles.streamingIndicator}>
           <ActivityIndicator size="small" color={COLORS.primary} />
@@ -509,7 +650,6 @@ const CircularsScreen = () => {
         </View>
       )}
 
-      {/* Refresh button (shown when loading is complete) */}
       {!loading && originalData.length > 0 && (
         <TouchableOpacity
           style={styles.refreshButton}
@@ -518,195 +658,178 @@ const CircularsScreen = () => {
           <Ionicons name="refresh" size={20} color="#fff" />
         </TouchableOpacity>
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: COLORS.background,
-    },
-    header: {
-      paddingTop: Platform.OS === 'ios' ? 48 : StatusBar.currentHeight + 10,
-      paddingBottom: 16,
-      paddingHorizontal: 20,
-      alignItems: 'center',
-      elevation: 4,
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
-    },
-    headerTitle: {
-      fontSize: 24,
-      fontWeight: 'bold',
-      color: COLORS.secondary,
-      marginBottom: 4,
-    },
-    headerSubtitle: {
-      fontSize: 16,
-      color: COLORS.secondary,
-      opacity: 0.9,
-    },
-    searchInput: {
-      backgroundColor: COLORS.secondary,
-      borderRadius: 12,
-      padding: 16,
-      margin: 10,
-      marginTop: 16,
-      fontSize: 16,
-      color: COLORS.text,
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      elevation: 2,
-    },
-    clearSearchButton: {
-      position: 'absolute',
-      right: 26,
-      top: 28,
-    },
-    sortOptions: {
-      flexDirection: 'row',
-      justifyContent: 'flex-end',
-      marginRight: 16,
-      marginBottom: 8,
-    },
-    sortButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: COLORS.primaryLight + '10',
-      padding: 8,
-      borderRadius: 20,
-      marginLeft: 10,
-    },
-    sortButtonText: {
-      color: COLORS.text,
-      fontSize: 12,
-      marginLeft: 4,
-      fontWeight: '600',
-    },
-    listContainer: {
-      padding: 14,
-      flexGrow: 1,
-    },
-    circularCard: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: '#fff',
-      borderRadius: 12,
-      padding: 12,
-      marginBottom: 10,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      elevation: 2,
-    },
-    iconContainer: {
-      width: 48,
-      height: 48,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: 12,
-      borderRadius: 24,
-      backgroundColor: COLORS.primaryLight + '10'
-    },
-    circularInfo: {
-      flex: 1,
-      marginRight: 8
-    },
-    circularTitle: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: COLORS.text,
-      marginBottom: 4,
-    },
-    circularDate: {
-      fontSize: 14,
-      color: COLORS.textSecondary,
-    },
-    sectionHeader: {
-      backgroundColor: '#e9ecef',
-      padding: 10,
-      borderRadius: 8,
-      marginVertical: 8,
-    },
-    sectionTitle: {
-      fontSize: 18,
-      fontWeight: 'bold',
-      color: COLORS.primary,
-    },
-    loadingOverlay: {
-      ...StyleSheet.absoluteFillObject,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: 'rgba(255, 255, 255, 0.9)',
-      zIndex: 10,
-    },
-    loadingIndicator: {
-      backgroundColor: '#fff',
-      borderRadius: 12,
-      padding: 24,
-      alignItems: 'center',
-      elevation: 4,
-      minWidth: 200,
-    },
-    loadingSubtext: {
-      marginTop: 8,
-      fontSize: 14,
-      color: COLORS.textSecondary,
-      fontStyle: 'italic',
-    },
-    emptyContainer: {
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 40,
-      minHeight: 300,
-    },
-    emptyText: {
-      marginTop: 10,
-      fontSize: 16,
-      color: COLORS.grey,
-    },
-    streamingIndicator: {
-      position: 'absolute',
-      bottom: 20,
-      left: 20,
-      backgroundColor: 'rgba(255, 255, 255, 0.9)',
-      padding: 12,
-      borderRadius: 20,
-      flexDirection: 'row',
-      alignItems: 'center',
-      elevation: 3,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.2,
-      shadowRadius: 3,
-      maxWidth: '60%',
-    },
-    streamingText: {
-      marginLeft: 8,
-      fontSize: 14,
-      color: COLORS.text,
-      fontWeight: '500',
-    },
-    refreshButton: {
-      position: 'absolute',
-      bottom: 20,
-      right: 20,
-      backgroundColor: COLORS.primary,
-      width: 50,
-      height: 50,
-      borderRadius: 25,
-      justifyContent: 'center',
-      alignItems: 'center',
-      elevation: 4,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.3,
-      shadowRadius: 3,
-    }
-  });
+const SortButton = ({ label, active, onPress, style, isDarkMode, theme }) => (
+  <TouchableOpacity
+    onPress={onPress}
+    style={[
+      {
+        backgroundColor: active
+          ? '#19C6C1'
+          : isDarkMode
+            ? '#232B3A'
+            : '#E6F8F7',
+        paddingVertical: 8,
+        paddingHorizontal: 22,
+        borderRadius: 8,
+        marginRight: 8,
+      },
+      style,
+    ]}
+  >
+    <Text style={{
+      color: active
+        ? '#fff'
+        : '#19C6C1',
+      fontWeight: '600'
+    }}>
+      {label}
+    </Text>
+  </TouchableOpacity>
+);
 
-  export default CircularsScreen;
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  containerDark: {
+    backgroundColor: '#101828',
+  },
+  listContainer: {
+    paddingHorizontal: 16,
+  },
+  monthHeader: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#007AFF',
+    marginTop: 24,
+    marginBottom: 12,
+  },
+  monthHeaderDark: {
+    color: '#0A84FF',
+  },
+  circularItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 14,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  circularItemDark: {
+    backgroundColor: '#1A2536',
+    shadowColor: '#000000',
+    shadowOpacity: 0.2,
+  },
+  circularContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  
+  circularTitle: {
+    fontSize: 15,
+    fontWeight: '400',
+    color: '#000000',
+    marginBottom: 4,
+  },
+  circularTitleDark: {
+    color: '#FFFFFF',
+  },
+  circularDate: {
+    fontSize: 13,
+    color: '#8E8E93',
+  },
+  circularDateDark: {
+    color: '#8E8E93',
+  },
+
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingIndicator: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#000',
+    fontWeight: '500',
+  },
+  loadingSubtext: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#666',
+  },
+  streamingIndicator: {
+    position: 'absolute',
+    bottom: 24,
+    left: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  streamingText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#000',
+    fontWeight: '500',
+  },
+  refreshButton: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    backgroundColor: '#2196F3',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    minHeight: 300,
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 15,
+    color: '#666',
+    textAlign: 'center',
+  },
+});
+
+export default CircularsScreen;

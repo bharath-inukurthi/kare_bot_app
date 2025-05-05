@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,9 @@ import {
   Modal,
   Image,
   SafeAreaView,
+  TouchableWithoutFeedback,
+  Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,6 +42,35 @@ const TEXT_DARK = '#0F172A';
 const TEXT_LIGHT = '#fff';
 const TEXT_SECONDARY = '#64748B';
 
+const SortButton = ({ label, active, onPress, style, isDarkMode, theme }) => (
+  <TouchableOpacity
+    onPress={onPress}
+    style={[
+      {
+        backgroundColor: active
+          ? '#19C6C1'
+          : isDarkMode
+            ? '#232B3A'
+            : '#E6F8F7',
+        paddingVertical: 8,
+        paddingHorizontal: 22,
+        borderRadius: 8,
+        marginRight: 8,
+      },
+      style,
+    ]}
+  >
+    <Text style={{
+      color: active
+        ? '#fff'
+        : '#19C6C1',
+      fontWeight: '600'
+    }}>
+      {label}
+    </Text>
+  </TouchableOpacity>
+);
+
 const CertificatesScreen = ({ navigation }) => {
   const { isDarkMode, theme } = useTheme();
   // State variables
@@ -51,11 +83,13 @@ const CertificatesScreen = ({ navigation }) => {
   const [isViewerVisible, setIsViewerVisible] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [viewerImages, setViewerImages] = useState([]);
-  const [isPromptVisible, setIsPromptVisible] = useState(false);
+  const [showNameModal, setShowNameModal] = useState(false);
   const [tempFileName, setTempFileName] = useState('');
   const [fileNameResolver, setFileNameResolver] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showNameModal, setShowNameModal] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const inputRef = useRef(null);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   // Constants
   const CERTIFICATES_DIRECTORY = FileSystem.documentDirectory + 'certificates/';
@@ -70,6 +104,38 @@ const CertificatesScreen = ({ navigation }) => {
   useEffect(() => {
     processAndSortCertificates();
   }, [searchQuery, sortType, sortOrder, rawCertificates]);
+
+  useEffect(() => {
+    const keyboardWillShow = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        setIsKeyboardVisible(true);
+      }
+    );
+    const keyboardWillHide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(-5);
+        setIsKeyboardVisible(false);
+      }
+    );
+
+    // Focus the input when modal becomes visible
+    if (showNameModal) {
+      const timer = setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillHide.remove();
+    };
+  }, [showNameModal]);
 
   // Directory setup
   const setupDirectories = async () => {
@@ -209,7 +275,6 @@ const CertificatesScreen = ({ navigation }) => {
         mediaTypes: 'Images',
       });
       if (result.canceled || !result.assets || !result.assets[0]) return;
-      setShowNameModal(true);
       await processSelectedImage(result.assets[0].uri);
     } catch (error) {
       console.error('Camera error:', error);
@@ -231,7 +296,6 @@ const CertificatesScreen = ({ navigation }) => {
         quality: 0.8,
       });
       if (result.canceled || !result.assets || !result.assets[0]) return;
-      setShowNameModal(true);
       await processSelectedImage(result.assets[0].uri);
     } catch (error) {
       console.error('Image picking error:', error);
@@ -242,11 +306,10 @@ const CertificatesScreen = ({ navigation }) => {
   // Common function to process and save selected images
   const processSelectedImage = async (imageUri) => {
     try {
-      // Prompt user for file name
+      setShowNameModal(true); // Show modal first
       const fileName = await promptForFileName();
       
       if (!fileName) {
-        // User cancelled the file naming
         return;
       }
       
@@ -513,7 +576,6 @@ const CertificatesScreen = ({ navigation }) => {
     return new Promise((resolve) => {
       setFileNameResolver(() => resolve);
       setTempFileName('');
-      setIsPromptVisible(true);
     });
   };
 
@@ -521,13 +583,11 @@ const CertificatesScreen = ({ navigation }) => {
     if (fileNameResolver) {
       const filename = tempFileName.trim();
       
-      // Validate filename
       if (!filename) {
         Alert.alert('Error', 'Please enter a valid file name');
         return;
       }
       
-      // Check if file already exists
       const finalName = filename.endsWith('.jpg') ? filename : `${filename}.jpg`;
       const exists = rawCertificates.some(cert => cert.filename === finalName);
       
@@ -542,16 +602,18 @@ const CertificatesScreen = ({ navigation }) => {
               style: 'destructive',
               onPress: () => {
                 fileNameResolver(finalName);
-                setIsPromptVisible(false);
+                setShowNameModal(false);
                 setFileNameResolver(null);
+                setTempFileName('');
               }
             }
           ]
         );
       } else {
         fileNameResolver(finalName);
-        setIsPromptVisible(false);
+        setShowNameModal(false);
         setFileNameResolver(null);
+        setTempFileName('');
       }
     }
   };
@@ -559,34 +621,103 @@ const CertificatesScreen = ({ navigation }) => {
   const handlePromptCancel = () => {
     if (fileNameResolver) {
       fileNameResolver(null);
-      setIsPromptVisible(false);
+      setShowNameModal(false);
       setFileNameResolver(null);
+      setTempFileName('');
     }
   };
 
   // UI components
   const renderItem = ({ item }) => (
-    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 16, marginBottom: 12, marginHorizontal: 20, borderRadius: 14, shadowColor: '#1e40af', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
+    <View style={{
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: isDarkMode ? theme.surface : '#fff',
+      padding: 16,
+      marginBottom: 12,
+      marginHorizontal: 20,
+      borderRadius: 14,
+      shadowColor: isDarkMode ? '#000' : '#1e40af',
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 4
+    }}>
       <Image
         source={{ uri: item.uri }}
         style={{ width: 60, height: 60, borderRadius: 10, marginRight: 14 }}
         resizeMode="cover"
       />
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 16, fontWeight: '600', color: '#0F172A', marginBottom: 2 }} numberOfLines={1}>
+        <Text style={{ 
+          fontSize: 16, 
+          fontWeight: '600', 
+          color: isDarkMode ? theme.text : '#0F172A', 
+          marginBottom: 2 
+        }} numberOfLines={1}>
           {item.filename.replace('.jpg', '')}
         </Text>
-        <Text style={{ fontSize: 13, color: '#64748B' }}>Added {item.date}</Text>
+        <Text style={{ 
+          fontSize: 13, 
+          color: isDarkMode ? theme.textSecondary : '#64748B' 
+        }}>
+          Added {item.date}
+        </Text>
       </View>
     </View>
   );
 
   const renderSectionHeader = ({ section }) => (
-    <View style={{ paddingHorizontal: 20, paddingTop: 18, paddingBottom: 4, backgroundColor: 'transparent' }}>
-      <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#0F172A' }}>{section.title}</Text>
-      <View style={{ height: 1, backgroundColor: '#E5EAF1', marginTop: 6 }} />
+    <View style={{
+      paddingHorizontal: 20,
+      paddingTop: 18,
+      paddingBottom: 4,
+      backgroundColor: 'transparent'
+    }}>
+      <Text style={{
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: isDarkMode ? theme.text : '#0F172A'
+      }}>
+        {section.title}
+      </Text>
+      <View style={{
+        height: 1,
+        backgroundColor: isDarkMode ? '#232B3A' : '#E5EAF1',
+        marginTop: 6
+      }} />
     </View>
   );
+
+  // Update the empty state component
+  const EmptyState = () => (
+    <View style={styles.emptyState}>
+      <Ionicons name="document-text-outline" size={60} color={theme.textSecondary} />
+      <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+        No certificates found
+      </Text>
+      <Text style={[styles.emptySubText, { color: theme.textSecondary }]}>
+        Tap the "+" button to add certificates
+      </Text>
+    </View>
+  );
+
+  // Floating Action Button (Both Themes)
+  <TouchableOpacity
+    style={[
+      styles.fab,
+      {
+        backgroundColor: isDarkMode ? '#19C6C1' : '#19C6C1',
+        shadowColor: isDarkMode ? '#000' : '#19C6C1',
+        shadowOpacity: isDarkMode ? 0.3 : 0.4,
+        shadowRadius: isDarkMode ? 8 : 6,
+      }
+    ]}
+    onPress={() => setShowAddModal(true)}
+    activeOpacity={0.85}
+  >
+    <Ionicons name="add" size={32} color={'#fff'} />
+  </TouchableOpacity>
 
   // Add Certificate Modal
   const AddCertificateModal = () => (
@@ -596,23 +727,64 @@ const CertificatesScreen = ({ navigation }) => {
       animationType="slide"
       onRequestClose={() => setShowAddModal(false)}
     >
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,0.18)' }}>
-        <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, width: '100%', maxWidth: 500, alignSelf: 'center' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-            <Text style={{ color: '#0F172A', fontWeight: 'bold', fontSize: 16 }}>Add Certificate</Text>
+      <View style={{ 
+        flex: 1, 
+        justifyContent: 'flex-end', 
+        backgroundColor: 'rgba(16,24,40,0.18)' 
+      }}>
+        <View style={{ 
+          backgroundColor: isDarkMode ? '#1A2536' : '#fff', 
+          borderTopLeftRadius: 24, 
+          borderTopRightRadius: 24, 
+          padding: 24, 
+          width: '100%', 
+          maxWidth: 500, 
+          alignSelf: 'center' 
+        }}>
+          <View style={{ 
+            flexDirection: 'row', 
+            alignItems: 'center', 
+            justifyContent: 'space-between', 
+            marginBottom: 18 
+          }}>
+            <Text style={{ 
+              color: isDarkMode ? '#fff' : '#0F172A', 
+              fontWeight: 'bold', 
+              fontSize: 16 
+            }}>
+              Add Certificate
+            </Text>
             <TouchableOpacity onPress={() => setShowAddModal(false)}>
-              <Ionicons name="close" size={24} color={'#64748B'} />
+              <Ionicons name="close" size={24} color={isDarkMode ? '#A0AEC0' : '#64748B'} />
             </TouchableOpacity>
           </View>
           <TouchableOpacity
-            style={{ backgroundColor: '#19C6C1', borderRadius: 10, padding: 16, alignItems: 'center', marginBottom: 12, flexDirection: 'row', justifyContent: 'center' }}
+            style={{ 
+              backgroundColor: isDarkMode ? '#19C6C1' : '#19C6C1', 
+              borderRadius: 10, 
+              padding: 16, 
+              alignItems: 'center', 
+              marginBottom: 12, 
+              flexDirection: 'row', 
+              justifyContent: 'center' 
+            }}
             onPress={async () => { setShowAddModal(false); await takePicture(); }}
           >
             <Ionicons name="camera" size={20} color={'#fff'} style={{ marginRight: 8 }} />
             <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>Take Photo</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={{ borderWidth: 2, borderColor: '#19C6C1', borderRadius: 10, padding: 16, alignItems: 'center', marginBottom: 12, flexDirection: 'row', justifyContent: 'center', backgroundColor: '#fff' }}
+            style={{ 
+              borderWidth: 2, 
+              borderColor: '#19C6C1', 
+              borderRadius: 10, 
+              padding: 16, 
+              alignItems: 'center', 
+              marginBottom: 12, 
+              flexDirection: 'row', 
+              justifyContent: 'center', 
+              backgroundColor: isDarkMode ? '#1A2536' : '#fff' 
+            }}
             onPress={async () => { setShowAddModal(false); await pickImage(); }}
           >
             <Ionicons name="image" size={20} color={'#19C6C1'} style={{ marginRight: 8 }} />
@@ -624,101 +796,301 @@ const CertificatesScreen = ({ navigation }) => {
   );
 
   // Name Certificate Modal
-  const NameCertificateModal = () => (
-    <Modal
-      visible={showNameModal && isPromptVisible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={handlePromptCancel}
-    >
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(16,24,40,0.18)' }}>
-        <View style={{ backgroundColor: WHITE, borderRadius: 16, padding: 24, width: 320, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 }}>
-          <Text style={{ fontSize: 18, fontWeight: 'bold', color: TEXT_DARK, marginBottom: 16 }}>Name Certificate</Text>
-          <TextInput
-            style={{ backgroundColor: BG_LIGHT, borderRadius: 8, padding: 12, marginBottom: 20, color: TEXT_DARK, borderWidth: 1, borderColor: '#E2E8F0', fontSize: 16 }}
-            placeholder="Enter certificate name"
-            placeholderTextColor={TEXT_SECONDARY}
-            value={tempFileName}
-            onChangeText={setTempFileName}
-            autoFocus
-          />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}>
-            <TouchableOpacity
-              style={{ flex: 1, backgroundColor: RED, borderRadius: 8, padding: 14, alignItems: 'center' }}
-              onPress={() => { setShowNameModal(false); handlePromptCancel(); }}
-            >
-              <Text style={{ color: WHITE, fontWeight: 'bold', fontSize: 16 }}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={{ flex: 1, backgroundColor: GREEN, borderRadius: 8, padding: 14, alignItems: 'center' }}
-              onPress={() => { setShowNameModal(false); handlePromptSubmit(); }}
-            >
-              <Text style={{ color: WHITE, fontWeight: 'bold', fontSize: 16 }}>Confirm</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
+  const NameCertificateModal = () => {
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
+    const inputRef = useRef(null);
+    const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+    useEffect(() => {
+      const keyboardWillShow = Keyboard.addListener(
+        Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+        (e) => {
+          setKeyboardHeight(e.endCoordinates.height);
+          setIsKeyboardVisible(true);
+        }
+      );
+      const keyboardWillHide = Keyboard.addListener(
+        Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+        () => {
+          setKeyboardHeight(-5);
+          setIsKeyboardVisible(false);
+        }
+      );
+
+      // Focus the input when modal becomes visible
+      if (showNameModal) {
+        const timer = setTimeout(() => {
+          if (inputRef.current) {
+            inputRef.current.focus();
+          }
+        }, 300);
+        return () => clearTimeout(timer);
+      }
+
+      return () => {
+        keyboardWillShow.remove();
+        keyboardWillHide.remove();
+      };
+    }, [showNameModal]);
+
+    const handleModalShow = () => {
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 300);
+    };
+
+    const handleTextChange = (text) => {
+      setTempFileName(text);
+      // Ensure keyboard stays open
+      if (!isKeyboardVisible && inputRef.current) {
+        inputRef.current.focus();
+      }
+    };
+
+    return (
+      <Modal
+        visible={showNameModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handlePromptCancel}
+        statusBarTranslucent
+        onShow={handleModalShow}
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+          enabled={true}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={{ 
+              flex: 1, 
+              justifyContent: 'center', 
+              alignItems: 'center', 
+              backgroundColor: 'rgba(16,24,40,0.18)' 
+            }}>
+              <View style={{ 
+                backgroundColor: isDarkMode ? '#1A2536' : WHITE, 
+                borderRadius: 16, 
+                padding: 24, 
+                width: 320,
+                shadowColor: '#000', 
+                shadowOpacity: 0.12, 
+                shadowRadius: 16, 
+                shadowOffset: { width: 0, height: 8 }, 
+                elevation: 8,
+                marginBottom: keyboardHeight > 0 ? keyboardHeight / 2 : 0,
+                transform: [{ translateY: keyboardHeight > 0 ? -keyboardHeight / 4 : 0 }]
+              }}>
+                <Text style={{ 
+                  fontSize: 18, 
+                  fontWeight: 'bold', 
+                  color: isDarkMode ? '#FFFFFF' : TEXT_DARK, 
+                  marginBottom: 16 
+                }}>
+                  Name Certificate
+                </Text>
+                <TextInput
+                  ref={inputRef}
+                  style={{ 
+                    backgroundColor: isDarkMode ? '#232B3A' : BG_LIGHT, 
+                    borderRadius: 8, 
+                    padding: 12, 
+                    marginBottom: 20, 
+                    color: isDarkMode ? '#FFFFFF' : TEXT_DARK, 
+                    borderWidth: 1, 
+                    borderColor: isDarkMode ? '#374151' : '#E2E8F0', 
+                    fontSize: 16 
+                  }}
+                  placeholder="Enter certificate name"
+                  placeholderTextColor={isDarkMode ? '#6B7280' : TEXT_SECONDARY}
+                  value={tempFileName}
+                  onChangeText={handleTextChange}
+                  autoFocus={true}
+                  keyboardAppearance={isDarkMode ? 'dark' : 'light'}
+                  onSubmitEditing={handlePromptSubmit}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  enablesReturnKeyAutomatically={true}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="default"
+                  textContentType="none"
+                  maxLength={50}
+                />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}>
+                  <TouchableOpacity
+                    style={{ 
+                      flex: 1, 
+                      backgroundColor: isDarkMode ? '#374151' : RED, 
+                      borderRadius: 8, 
+                      padding: 14, 
+                      alignItems: 'center' 
+                    }}
+                    onPress={handlePromptCancel}
+                  >
+                    <Text style={{ 
+                      color: WHITE, 
+                      fontWeight: 'bold', 
+                      fontSize: 16 
+                    }}>
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{ 
+                      flex: 1, 
+                      backgroundColor: isDarkMode ? '#19C6C1' : GREEN, 
+                      borderRadius: 8, 
+                      padding: 14, 
+                      alignItems: 'center' 
+                    }}
+                    onPress={handlePromptSubmit}
+                  >
+                    <Text style={{ 
+                      color: WHITE, 
+                      fontWeight: 'bold', 
+                      fontSize: 16 
+                    }}>
+                      Confirm
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </Modal>
+    );
+  };
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
-        <StatusBar barStyle={'dark-content'} />
+      <SafeAreaView style={{ flex: 1, backgroundColor: isDarkMode ? theme.background : '#F8FAFC' }}>
+        <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+        
         {/* Header */}
-        <View style={{ paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 0, paddingHorizontal: 20, backgroundColor: '#fff' }}>
+        <View style={{
+          paddingTop: Platform.OS === 'ios' ? 30 : 15,
+          paddingBottom: 0,
+          paddingHorizontal: 10,
+          backgroundColor: isDarkMode ? (theme.background || '#101828') : '#fff'
+        }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4 }}>
-              <Ionicons name="arrow-back" size={26} color={'#0F172A'} />
+              <Ionicons name="arrow-back" size={26} color={isDarkMode ? '#fff' : '#0F172A'} />
             </TouchableOpacity>
-            <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#0F172A', textAlign: 'center', flex: 1 }}>Certificates</Text>
-            <TouchableOpacity onPress={() => setShowAddModal(true)} style={{ padding: 4 }}>
-              
-            </TouchableOpacity>
+            <Text style={{
+              fontSize: 24,
+              fontWeight: 'bold',
+              color: isDarkMode ? '#fff' : '#0F172A',
+              textAlign: 'center',
+              flex: 1
+            }}>
+              Certificates
+            </Text>
+            <View style={{ width: 34 }} />
           </View>
-          <Text style={{ color: '#64748B', fontSize: 15, marginTop: 6, marginBottom: 0, textAlign: 'center' }}>
+          <Text style={{
+            color: isDarkMode ? '#fff' : '#64748B',
+            fontSize: 15,
+            marginTop: 6,
+            marginBottom: 0,
+            textAlign: 'center'
+          }}>
             Manage your digital certificates
           </Text>
         </View>
         {/* Search Bar */}
         <View style={{ paddingHorizontal: 20, marginTop: 18, marginBottom: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F6FA', borderRadius: 12, paddingHorizontal: 14, height: 44 }}>
-            <Ionicons name="search" size={20} color={'#64748B'} style={{ marginRight: 8 }} />
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: isDarkMode ? '#232B3A' : '#F3F6FA',
+              borderRadius: 12,
+              paddingHorizontal: 14,
+              height: 44,
+            }}
+          >
+            <Ionicons
+              name="search"
+              size={20}
+              color={isDarkMode ? '#fff' : '#64748B'}
+              style={{ marginRight: 8 }}
+            />
             <TextInput
-              style={{ flex: 1, fontSize: 16, color: '#0F172A', backgroundColor: 'transparent' }}
+              style={{
+                flex: 1,
+                fontSize: 16,
+                color: isDarkMode ? '#fff' : '#0F172A',
+                backgroundColor: 'transparent',
+              }}
               placeholder="Search certificates..."
-              placeholderTextColor={'#64748B'}
+              placeholderTextColor={isDarkMode ? '#A0AEC0' : '#64748B'}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
           </View>
         </View>
         {/* Filter/Sort Buttons */}
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8, paddingHorizontal: 20 }}>
-          <TouchableOpacity
-            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: sortType === 'date' ? '#19C6C1' : '#E6F8F7', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 20, marginRight: 4 }}
-            onPress={() => setSortType('date')}
-          >
-            <Text style={{ color: sortType === 'date' ? '#fff' : '#19C6C1', fontWeight: '600' }}>Date</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: sortType === 'name' ? '#19C6C1' : '#E6F8F7', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 20, marginRight: 4 }}
-            onPress={() => setSortType('name')}
-          >
-            <Text style={{ color: sortType === 'name' ? '#fff' : '#19C6C1', fontWeight: '600' }}>Name</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: sortOrder === 'asc' ? '#19C6C1' : '#E6F8F7', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 20, marginRight: 4 }}
-            onPress={() => setSortOrder('asc')}
-          >
-            <Text style={{ color: sortOrder === 'asc' ? '#fff' : '#19C6C1', fontWeight: '600' }}>Asc</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: sortOrder === 'desc' ? '#19C6C1' : '#E6F8F7', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 20 }}
-            onPress={() => setSortOrder('desc')}
-          >
-            <Text style={{ color: sortOrder === 'desc' ? '#fff' : '#19C6C1', fontWeight: '600' }}>Desc</Text>
-          </TouchableOpacity>
+        <View style={{
+          flexDirection: 'row',
+          gap: 6,
+          marginBottom: 8,
+          paddingHorizontal: 10,
+        }}>
+          {/* Group 1: Date/Name */}
+          <View style={{
+            flexDirection: 'row',
+            backgroundColor: isDarkMode ? '#232B3A' : '#E6F8F7',
+            borderRadius: 12,
+            padding: 4,
+            marginRight: 12,
+          }}>
+            <SortButton
+              label="Date"
+              active={sortType === 'date'}
+              onPress={() => setSortType('date')}
+              style={{ borderTopRightRadius: 5, borderBottomRightRadius: 5 }}
+              isDarkMode={isDarkMode}
+              theme={theme}
+            />
+            <SortButton
+              label="Name"
+              active={sortType === 'name'}
+              onPress={() => setSortType('name')}
+              style={{ borderTopLeftRadius: 5, borderBottomLeftRadius: 5, marginRight: 0 }}
+              isDarkMode={isDarkMode}
+              theme={theme}
+            />
+          </View>
+          {/* Group 2: Asc/Desc */}
+          <View style={{
+            flexDirection: 'row',
+            backgroundColor: isDarkMode ? '#232B3A' : '#E6F8F7',
+            borderRadius: 12,
+            padding: 4,
+          }}>
+            <SortButton
+              label="Asc"
+              active={sortOrder === 'asc'}
+              onPress={() => setSortOrder('asc')}
+              style={{ borderTopRightRadius: 5, borderBottomRightRadius: 5 }}
+              isDarkMode={isDarkMode}
+              theme={theme}
+            />
+            <SortButton
+              label="Desc"
+              active={sortOrder === 'desc'}
+              onPress={() => setSortOrder('desc')}
+              style={{ borderTopLeftRadius: 5, borderBottomLeftRadius: 5, marginRight: 0 }}
+              isDarkMode={isDarkMode}
+              theme={theme}
+            />
+          </View>
         </View>
         {/* Certificate List */}
         <SectionList
@@ -726,55 +1098,26 @@ const CertificatesScreen = ({ navigation }) => {
           keyExtractor={(item) => item.uri}
           renderItem={renderItem}
           renderSectionHeader={renderSectionHeader}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Ionicons name="document-text-outline" size={60} color={theme.textSecondary} />
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                No certificates found
-              </Text>
-              <Text style={[styles.emptySubText, { color: theme.textSecondary }]}>
-                Tap the "+" button to add certificates
-              </Text>
-            </View>
-          }
+          ListEmptyComponent={<EmptyState />}
           contentContainerStyle={styles.listContent}
         />
-        {/* Add Certificate FAB (Light Mode) */}
-        {!isDarkMode && (
-          <TouchableOpacity
-            style={{ position: 'absolute', bottom: 32, right: 32, backgroundColor: '#19C6C1', borderRadius: 28, width: 56, height: 56, alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: '#19C6C1' }}
-            onPress={() => setShowAddModal(true)}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="add" size={32} color={'#fff'} />
-          </TouchableOpacity>
-        )}
-        {/* Add Certificate Card (Dark Mode) */}
-        {isDarkMode && (
-          <View style={[styles.darkModeCard, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.darkModeCardTitle, { color: theme.text }]}>
-              Add Certificate
-            </Text>
-            <TouchableOpacity
-              style={[styles.darkModeCardButton, { backgroundColor: theme.primary }]}
-              onPress={() => setShowAddModal(true)}
-            >
-              <Ionicons name="camera" size={20} color={theme.background} style={styles.darkModeCardIcon} />
-              <Text style={[styles.darkModeCardButtonText, { color: theme.background }]}>
-                Take Photo
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.darkModeCardOutlineButton, { borderColor: theme.text }]}
-              onPress={() => setShowAddModal(true)}
-            >
-              <Ionicons name="image" size={20} color={theme.text} style={styles.darkModeCardIcon} />
-              <Text style={[styles.darkModeCardButtonText, { color: theme.text }]}>
-                Choose from Gallery
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        {/* Floating Action Button (Both Themes) */}
+        <TouchableOpacity
+          style={[
+            styles.fab,
+            {
+              backgroundColor: isDarkMode ? '#19C6C1' : '#19C6C1',
+              shadowColor: isDarkMode ? '#000' : '#19C6C1',
+              shadowOpacity: isDarkMode ? 0.3 : 0.4,
+              shadowRadius: isDarkMode ? 8 : 6,
+            }
+          ]}
+          onPress={() => setShowAddModal(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="add" size={32} color={'#fff'} />
+        </TouchableOpacity>
+       
         <AddCertificateModal />
         <NameCertificateModal />
       </SafeAreaView>
@@ -914,11 +1257,8 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    elevation: 6,
+    shadowOffset: { width: 0, height: 4 },
   },
   darkModeCard: {
     margin: 16,
