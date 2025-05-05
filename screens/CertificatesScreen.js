@@ -17,6 +17,7 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   KeyboardAvoidingView,
+  Button,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,6 +29,7 @@ import ImageViewer from 'react-native-image-zoom-viewer';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { COLORS } from '../constants/Colors';
 import { useTheme } from '../context/ThemeContext';
+import { Snackbar } from 'react-native-paper';
 
 const TEAL = '#19C6C1';
 const LIGHT_TEAL = '#E6F8F7';
@@ -83,13 +85,15 @@ const CertificatesScreen = ({ navigation }) => {
   const [isViewerVisible, setIsViewerVisible] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [viewerImages, setViewerImages] = useState([]);
-  const [showNameModal, setShowNameModal] = useState(false);
-  const [tempFileName, setTempFileName] = useState('');
-  const [fileNameResolver, setFileNameResolver] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [fileName, setFileName] = useState('');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const inputRef = useRef(null);
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
+  const [selectedCertificate, setSelectedCertificate] = useState(null);
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
 
   // Constants
   const CERTIFICATES_DIRECTORY = FileSystem.documentDirectory + 'certificates/';
@@ -105,38 +109,27 @@ const CertificatesScreen = ({ navigation }) => {
     processAndSortCertificates();
   }, [searchQuery, sortType, sortOrder, rawCertificates]);
 
+  // Keyboard event listener
   useEffect(() => {
     const keyboardWillShow = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (e) => {
         setKeyboardHeight(e.endCoordinates.height);
-        setIsKeyboardVisible(true);
       }
     );
     const keyboardWillHide = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
       () => {
         setKeyboardHeight(0);
-        setIsKeyboardVisible(false);
       }
     );
-  
+
     return () => {
       keyboardWillShow.remove();
       keyboardWillHide.remove();
     };
   }, []);
-  
-  // Add this useEffect to focus the input when the modal appears
-  useEffect(() => {
-    if (showNameModal && inputRef.current) {
-      // Slightly delay focusing to ensure the modal is fully rendered
-      const timer = setTimeout(() => {
-        inputRef.current.focus();
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [showNameModal]);
+
   // Directory setup
   const setupDirectories = async () => {
     try {
@@ -150,7 +143,7 @@ const CertificatesScreen = ({ navigation }) => {
       await ensureMediaLibraryPermissions();
     } catch (error) {
       console.error('Directory setup error:', error);
-      Alert.alert('Storage Error', 'Failed to set up storage directories. Some features may not work.');
+      showSnackbar('Failed to set up storage directories. Some features may not work.');
     }
   };
 
@@ -158,11 +151,7 @@ const CertificatesScreen = ({ navigation }) => {
   const ensureMediaLibraryPermissions = async () => {
     const { status } = await MediaLibrary.requestPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert(
-        'Permission Required',
-        'To save certificates to your device gallery, please grant storage permissions.',
-        [{ text: 'OK' }]
-      );
+      showSnackbar('To save certificates to your device gallery, please grant storage permissions.');
     }
     return status === 'granted';
   };
@@ -186,7 +175,7 @@ const CertificatesScreen = ({ navigation }) => {
       setRawCertificates(certificatesData);
     } catch (error) {
       console.error('Load error:', error);
-      Alert.alert('Error', 'Failed to load certificates');
+      showSnackbar('Failed to load certificates');
     } finally {
       setLoading(false);
     }
@@ -306,17 +295,26 @@ const CertificatesScreen = ({ navigation }) => {
   // Common function to process and save selected images
   const processSelectedImage = async (imageUri) => {
     try {
-      const fileName = await promptForFileName();
-      
-      if (!fileName) {
-        return; // User cancelled
-      }
-      
+      setShowNameModal(true);
+    } catch (error) {
+      console.error('Image processing error:', error);
+      Alert.alert('Error', 'Failed to process image');
+    }
+  };
+
+  const handleFileNameSubmit = async (imageUri) => {
+    if (!fileName.trim()) {
+      showSnackbar('Please enter a valid file name');
+      return;
+    }
+
+    try {
       setLoading(true);
+      setShowNameModal(false);
       
-      // Rest of your existing code...
       // Create destination path for internal storage
-      const destinationUri = CERTIFICATES_DIRECTORY + fileName;
+      const finalName = fileName.trim().endsWith('.jpg') ? fileName.trim() : `${fileName.trim()}.jpg`;
+      const destinationUri = CERTIFICATES_DIRECTORY + finalName;
       
       // Copy the file to our app directory
       await FileSystem.copyAsync({
@@ -362,27 +360,164 @@ const CertificatesScreen = ({ navigation }) => {
       
       // Show appropriate success message
       if (savedToGallery) {
-        Alert.alert(
-          'Success',
-          `Certificate saved as "${fileName}"! It is also available in your device gallery.`,
-          [{ text: 'OK' }]
-        );
+        showSnackbar(`Certificate saved as "${finalName}"! It is also available in your device gallery.`);
       } else {
-        Alert.alert(
-          'Partial Success', 
-          `Certificate saved within the app as "${fileName}", but could not be saved to your device gallery.`,
-          [{ text: 'OK' }]
-        );
+        showSnackbar(`Certificate saved within the app as "${finalName}", but could not be saved to your device gallery.`);
       }
       
       // Refresh the certificates list
       await loadCertificates();
     } catch (error) {
       console.error('Image processing error:', error);
-      Alert.alert('Error', 'Failed to save certificate');
+      showSnackbar('Failed to save certificate');
     } finally {
       setLoading(false);
+      setFileName('');
     }
+  };
+
+  const handleFileNameCancel = () => {
+    setShowNameModal(false);
+    setFileName('');
+  };
+
+  // File Name Modal Component
+  const FileNameModal = () => {
+    const inputRef = useRef(null);
+
+    useEffect(() => {
+      if (showNameModal && inputRef.current) {
+        const timer = setTimeout(() => {
+          inputRef.current.focus();
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+    }, [showNameModal]);
+
+    return (
+      <Modal
+        visible={showNameModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleFileNameCancel}
+        statusBarTranslucent
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+          enabled={keyboardHeight > 0}
+        >
+          <View style={{ 
+            flex: 1, 
+            justifyContent: 'center', 
+            alignItems: 'center', 
+            backgroundColor: 'rgba(16,24,40,0.18)',
+            paddingBottom: keyboardHeight
+          }}>
+            {/* Touchable background */}
+            <TouchableOpacity
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'transparent'
+              }}
+              activeOpacity={1}
+              onPress={handleFileNameCancel}
+            />
+            
+            {/* Modal content */}
+            <View style={{ 
+              backgroundColor: isDarkMode ? theme.surface : WHITE, 
+              borderRadius: 16, 
+              padding: 24, 
+              width: '90%',
+              maxWidth: 320,
+              shadowColor: '#000', 
+              shadowOpacity: 0.12, 
+              shadowRadius: 16, 
+              shadowOffset: { width: 0, height: 8 }, 
+              elevation: 8,
+              zIndex: 1
+            }}>
+              <Text style={{ 
+                fontSize: 18, 
+                fontWeight: 'bold', 
+                color: isDarkMode ? theme.text : TEXT_DARK, 
+                marginBottom: 16 
+              }}>
+                Name Certificate
+              </Text>
+              <TextInput
+                ref={inputRef}
+                style={{ 
+                  backgroundColor: isDarkMode ? theme.surface : BG_LIGHT, 
+                  borderRadius: 8, 
+                  padding: 12, 
+                  marginBottom: 20, 
+                  color: isDarkMode ? theme.text : TEXT_DARK, 
+                  borderWidth: 1, 
+                  borderColor: isDarkMode ? theme.border : '#E2E8F0', 
+                  fontSize: 16 
+                }}
+                placeholder="Enter certificate name"
+                placeholderTextColor={isDarkMode ? theme.textSecondary : TEXT_SECONDARY}
+                value={fileName}
+                onChangeText={setFileName}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="default"
+                textContentType="none"
+                maxLength={50}
+                returnKeyType="done"
+                onSubmitEditing={() => handleFileNameSubmit()}
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}>
+                <TouchableOpacity
+                  style={{ 
+                    flex: 1, 
+                    backgroundColor: isDarkMode ? theme.surface : RED, 
+                    borderRadius: 8, 
+                    padding: 14, 
+                    alignItems: 'center' 
+                  }}
+                  onPress={handleFileNameCancel}
+                >
+                  <Text style={{ 
+                    color: WHITE, 
+                    fontWeight: 'bold', 
+                    fontSize: 16 
+                  }}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ 
+                    flex: 1, 
+                    backgroundColor: isDarkMode ? TEAL : GREEN, 
+                    borderRadius: 8, 
+                    padding: 14, 
+                    alignItems: 'center' 
+                  }}
+                  onPress={() => handleFileNameSubmit()}
+                >
+                  <Text style={{ 
+                    color: WHITE, 
+                    fontWeight: 'bold', 
+                    fontSize: 16 
+                  }}>
+                    Confirm
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    );
   };
 
   // Get or create album for certificates with improved error handling
@@ -571,101 +706,175 @@ const CertificatesScreen = ({ navigation }) => {
     }
   };
 
-  // File name prompt handling
-  const promptForFileName = () => {
-    return new Promise((resolve) => {
-      setTempFileName('');
-      setFileNameResolver(() => resolve);
-      setShowNameModal(true);
-    });
+  // Handle certificate press
+  const handleCertificatePress = (item) => {
+    const images = rawCertificates.map(cert => ({ 
+      url: cert.uri,
+      props: { title: cert.filename } 
+    }));
+    const index = rawCertificates.findIndex(cert => cert.uri === item.uri);
+    setViewerImages(images);
+    setCurrentImageIndex(index);
+    setIsViewerVisible(true);
   };
 
-  const handlePromptSubmit = () => {
-    if (fileNameResolver) {
-      const filename = tempFileName.trim();
+  // Handle certificate long press
+  const handleCertificateLongPress = (item) => {
+    setSelectedCertificate(item);
+    setShowOptionsModal(true);
+  };
+
+  // Handle certificate deletion
+  const handleDeleteCertificate = async () => {
+    if (!selectedCertificate) return;
+    setDeleteModalVisible(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedCertificate) return;
+
+    try {
+      setLoading(true);
+      // Delete from app's internal storage
+      await FileSystem.deleteAsync(selectedCertificate.uri);
       
-      if (!filename) {
-        Alert.alert('Error', 'Please enter a valid file name');
+      // Try to delete from media library if possible
+      const { status } = await MediaLibrary.getPermissionsAsync();
+      if (status === 'granted') {
+        try {
+          await deleteFromMediaLibrary(selectedCertificate.filename);
+        } catch (mediaError) {
+          console.log('Media library deletion error:', mediaError);
+        }
+      }
+      
+      showSnackbar('Certificate deleted successfully');
+      await loadCertificates();
+    } catch (error) {
+      console.error('Deletion error:', error);
+      showSnackbar('Failed to delete certificate');
+    } finally {
+      setLoading(false);
+      setDeleteModalVisible(false);
+      setShowOptionsModal(false);
+      setSelectedCertificate(null);
+    }
+  };
+
+  // Handle certificate sharing
+  const handleShareCertificate = async () => {
+    if (!selectedCertificate) return;
+
+    try {
+      if (!(await Sharing.isAvailableAsync())) {
+        showSnackbar('Sharing is not available on this device');
         return;
       }
       
-      const finalName = filename.endsWith('.jpg') ? filename : `${filename}.jpg`;
-      const exists = rawCertificates.some(cert => cert.filename === finalName);
-      
-      if (exists) {
-        Alert.alert(
-          'File Already Exists',
-          'A certificate with this name already exists. Do you want to replace it?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Replace', 
-              style: 'destructive',
-              onPress: () => {
-                fileNameResolver(finalName);
-                setShowNameModal(false);
-                setFileNameResolver(null);
-                setTempFileName('');
-              }
-            }
-          ]
-        );
-      } else {
-        fileNameResolver(finalName);
-        setShowNameModal(false);
-        setFileNameResolver(null);
-        setTempFileName('');
-      }
+      await Sharing.shareAsync(selectedCertificate.uri, {
+        mimeType: 'image/jpeg',
+        dialogTitle: 'Share Certificate',
+        UTI: 'public.image'
+      });
+    } catch (error) {
+      console.error('Share error:', error);
+      showSnackbar('Failed to share certificate');
     }
   };
 
-  const handlePromptCancel = () => {
-    if (fileNameResolver) {
-      fileNameResolver(null);
-      setShowNameModal(false);
-      setFileNameResolver(null);
-      setTempFileName('');
-    }
-  };
+  // Options Modal Component
+  const OptionsModal = () => (
+    <Modal
+      visible={showOptionsModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowOptionsModal(false)}
+    >
+      <TouchableOpacity
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={() => setShowOptionsModal(false)}
+      >
+        <View style={[
+          styles.optionsModalContent,
+          { backgroundColor: isDarkMode ? theme.surface : WHITE }
+        ]}>
+          <TouchableOpacity
+            style={styles.optionButton}
+            onPress={handleShareCertificate}
+          >
+            <Ionicons name="share-outline" size={24} color={isDarkMode ? theme.text : TEXT_DARK} />
+            <Text style={[styles.optionText, { color: isDarkMode ? theme.text : TEXT_DARK }]}>
+              Share
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optionButton, styles.deleteButton]}
+            onPress={handleDeleteCertificate}
+          >
+            <Ionicons name="trash-outline" size={24} color={RED} />
+            <Text style={[styles.optionText, { color: RED }]}>
+              Delete
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.optionButton}
+            onPress={() => setShowOptionsModal(false)}
+          >
+            <Ionicons name="close-outline" size={24} color={isDarkMode ? theme.text : TEXT_DARK} />
+            <Text style={[styles.optionText, { color: isDarkMode ? theme.text : TEXT_DARK }]}>
+              Cancel
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
 
-  // UI components
+  // Update the renderItem function
   const renderItem = ({ item }) => (
-    <View style={{
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: isDarkMode ? theme.surface : '#fff',
-      padding: 16,
-      marginBottom: 12,
-      marginHorizontal: 20,
-      borderRadius: 14,
-      shadowColor: isDarkMode ? '#000' : '#1e40af',
-      shadowOpacity: 0.08,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: 4
-    }}>
-      <Image
-        source={{ uri: item.uri }}
-        style={{ width: 60, height: 60, borderRadius: 10, marginRight: 14 }}
-        resizeMode="cover"
-      />
-      <View style={{ flex: 1 }}>
-        <Text style={{ 
-          fontSize: 16, 
-          fontWeight: '600', 
-          color: isDarkMode ? theme.text : '#0F172A', 
-          marginBottom: 2 
-        }} numberOfLines={1}>
-          {item.filename.replace('.jpg', '')}
-        </Text>
-        <Text style={{ 
-          fontSize: 13, 
-          color: isDarkMode ? theme.textSecondary : '#64748B' 
-        }}>
-          Added {item.date}
-        </Text>
+    <TouchableOpacity
+      onPress={() => handleCertificatePress(item)}
+      onLongPress={() => handleCertificateLongPress(item)}
+      activeOpacity={0.7}
+    >
+      <View style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: isDarkMode ? theme.surface : '#fff',
+        padding: 16,
+        marginBottom: 12,
+        marginHorizontal: 20,
+        borderRadius: 14,
+        shadowColor: isDarkMode ? '#000' : '#1e40af',
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 4
+      }}>
+        <Image
+          source={{ uri: item.uri }}
+          style={{ width: 60, height: 60, borderRadius: 10, marginRight: 14 }}
+          resizeMode="cover"
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={{ 
+            fontSize: 16, 
+            fontWeight: '600', 
+            color: isDarkMode ? theme.text : '#0F172A', 
+            marginBottom: 2 
+          }} numberOfLines={1}>
+            {item.filename.replace('.jpg', '')}
+          </Text>
+          <Text style={{ 
+            fontSize: 13, 
+            color: isDarkMode ? theme.textSecondary : '#64748B' 
+          }}>
+            Added {item.date}
+          </Text>
+        </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderSectionHeader = ({ section }) => (
@@ -690,7 +899,6 @@ const CertificatesScreen = ({ navigation }) => {
     </View>
   );
 
-  // Update the empty state component
   const EmptyState = () => (
     <View style={styles.emptyState}>
       <Ionicons name="document-text-outline" size={60} color={theme.textSecondary} />
@@ -796,149 +1004,11 @@ const CertificatesScreen = ({ navigation }) => {
     </Modal>
   );
 
-  // Name Certificate Modal
-  const NameCertificateModal = () => {
-    const [keyboardHeight, setKeyboardHeight] = useState(0);
-    const inputRef = useRef(null);
-
-    useEffect(() => {
-      const keyboardWillShow = Keyboard.addListener(
-        Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-        (e) => {
-          setKeyboardHeight(e.endCoordinates.height);
-        }
-      );
-      const keyboardWillHide = Keyboard.addListener(
-        Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-        () => {
-          setKeyboardHeight(0);
-        }
-      );
-
-      return () => {
-        keyboardWillShow.remove();
-        keyboardWillHide.remove();
-      };
-    }, []);
-
-    useEffect(() => {
-      if (showNameModal && inputRef.current) {
-        inputRef.current.focus();
-      }
-    }, [showNameModal]);
-
-    return (
-      <Modal
-        visible={showNameModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={handlePromptCancel}
-        statusBarTranslucent
-      >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : null}
-          style={{ flex: 1 }}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
-        >
-          <View style={{ 
-            flex: 1, 
-            justifyContent: 'center', 
-            alignItems: 'center', 
-            backgroundColor: 'rgba(16,24,40,0.18)' 
-          }}>
-            <View style={{ 
-              backgroundColor: isDarkMode ? theme.surface : WHITE, 
-              borderRadius: 16, 
-              padding: 24, 
-              width: '90%',
-              maxWidth: 320,
-              shadowColor: '#000', 
-              shadowOpacity: 0.12, 
-              shadowRadius: 16, 
-              shadowOffset: { width: 0, height: 8 }, 
-              elevation: 8,
-              marginBottom: keyboardHeight > 0 ? keyboardHeight / 2 : 0,
-              transform: [{ translateY: keyboardHeight > 0 ? -keyboardHeight / 4 : 0 }]
-            }}>
-              <Text style={{ 
-                fontSize: 18, 
-                fontWeight: 'bold', 
-                color: isDarkMode ? theme.text : TEXT_DARK, 
-                marginBottom: 16 
-              }}>
-                Name Certificate
-              </Text>
-              <TextInput
-                ref={inputRef}
-                style={{ 
-                  backgroundColor: isDarkMode ? theme.surface : BG_LIGHT, 
-                  borderRadius: 8, 
-                  padding: 12, 
-                  marginBottom: 20, 
-                  color: isDarkMode ? theme.text : TEXT_DARK, 
-                  borderWidth: 1, 
-                  borderColor: isDarkMode ? theme.border : '#E2E8F0', 
-                  fontSize: 16 
-                }}
-                placeholder="Enter certificate name"
-                placeholderTextColor={isDarkMode ? theme.textSecondary : TEXT_SECONDARY}
-                value={tempFileName}
-                onChangeText={setTempFileName}
-                autoFocus={true}
-                keyboardAppearance={isDarkMode ? 'dark' : 'light'}
-                onSubmitEditing={handlePromptSubmit}
-                returnKeyType="done"
-                blurOnSubmit={false}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="default"
-                textContentType="none"
-                maxLength={50}
-              />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}>
-                <TouchableOpacity
-                  style={{ 
-                    flex: 1, 
-                    backgroundColor: isDarkMode ? theme.surface : RED, 
-                    borderRadius: 8, 
-                    padding: 14, 
-                    alignItems: 'center' 
-                  }}
-                  onPress={handlePromptCancel}
-                >
-                  <Text style={{ 
-                    color: WHITE, 
-                    fontWeight: 'bold', 
-                    fontSize: 16 
-                  }}>
-                    Cancel
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ 
-                    flex: 1, 
-                    backgroundColor: isDarkMode ? TEAL : GREEN, 
-                    borderRadius: 8, 
-                    padding: 14, 
-                    alignItems: 'center' 
-                  }}
-                  onPress={handlePromptSubmit}
-                >
-                  <Text style={{ 
-                    color: WHITE, 
-                    fontWeight: 'bold', 
-                    fontSize: 16 
-                  }}>
-                    Confirm
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-    );
+  const showSnackbar = (message) => {
+    setSnackbarMessage(message);
+    setSnackbarVisible(true);
   };
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1, backgroundColor: isDarkMode ? theme.background : '#F8FAFC' }}>
@@ -947,9 +1017,20 @@ const CertificatesScreen = ({ navigation }) => {
         {/* Header */}
         <View style={{
           paddingTop: Platform.OS === 'ios' ? 30 : 15,
-          paddingBottom: 10,
+          paddingBottom: 12,
           paddingHorizontal: 10,
-          backgroundColor: isDarkMode ? (theme.background || '#101828') : '#fff'
+          backgroundColor: isDarkMode ? (theme.background || '#101828') : '#fff',
+          shadowColor: isDarkMode ? '#000' : '#000',
+          shadowOffset: {
+            width: 0,
+            height: 1,
+          },
+          shadowOpacity: isDarkMode ? 0.4 : 0.1,
+          shadowRadius: 4,
+          elevation: 3,
+          borderBottomWidth: isDarkMode ? 1 : 0,
+          borderBottomColor: isDarkMode ? '#2D3748' : 'transparent',
+          zIndex: 10,
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4 }}>
@@ -970,10 +1051,11 @@ const CertificatesScreen = ({ navigation }) => {
             color: isDarkMode ? '#fff' : '#64748B',
             fontSize: 15,
             marginTop: 6,
-            marginBottom: 0,
-            textAlign: 'center'
+            marginBottom: 4,
+            textAlign: 'center',
+            opacity: 0.8
           }}>
-            Manage your digital certificates
+            Track your academic certificates
           </Text>
         </View>
         {/* Search Bar */}
@@ -1092,7 +1174,125 @@ const CertificatesScreen = ({ navigation }) => {
         </TouchableOpacity>
        
         <AddCertificateModal />
-        <NameCertificateModal />
+        <FileNameModal />
+        <OptionsModal />
+        <Modal
+          visible={isViewerVisible}
+          transparent={true}
+          onRequestClose={() => setIsViewerVisible(false)}
+          animationType="fade"
+          statusBarTranslucent
+        >
+          <View style={styles.viewerBackground}>
+            <ImageViewer
+              imageUrls={viewerImages}
+              index={currentImageIndex}
+              enableSwipeDown={true}
+              onSwipeDown={() => setIsViewerVisible(false)}
+              saveToLocalByLongPress={false}
+              renderHeader={() => (
+                <View style={styles.viewerHeader}>
+                  <View style={styles.viewerButtons}>
+                    <TouchableOpacity 
+                      style={[styles.shareButton, { backgroundColor: 'rgba(25, 198, 193, 0.3)' }]} 
+                      onPress={() => handleShareCertificate()}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="share-outline" size={20} color="#fff" />
+                      <Text style={[styles.shareButtonText, { fontWeight: '900' }]}>Share</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.closeButton, { backgroundColor: 'rgba(255, 255, 255, 0.36)' }]} 
+                      onPress={() => setIsViewerVisible(false)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={{color: '#ffff', fontWeight: '900'}}>Close</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+              renderIndicator={(currentIndex, allSize) => (
+                <View style={[styles.indicatorContainer, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}>
+                  <Text style={styles.indicatorText}>
+                    {viewerImages[currentIndex - 1]?.props?.title || ''}
+                  </Text>
+                  {allSize > 1 && (
+                    <Text style={styles.pageIndicator}>
+                      {currentIndex}/{allSize}
+                    </Text>
+                  )}
+                </View>
+              )}
+              backgroundColor="rgba(0, 0, 0, 0.9)"
+              loadingRender={() => (
+                <View style={styles.loadingContainer}>
+                  <Text style={[styles.loadingText, { color: '#fff' }]}>Loading...</Text>
+                </View>
+              )}
+            />
+          </View>
+        </Modal>
+
+        <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
+        style={[
+          styles.snackbar,
+          { backgroundColor: isDarkMode ? '#1F2937' : '#1A1A1A' }
+        ]}
+        action={{
+          label: 'Dismiss',
+          onPress: () => setSnackbarVisible(false),
+        }}
+      >
+        {snackbarMessage}
+      </Snackbar>
+
+        {/* Delete Confirmation Modal */}
+        <Modal
+          visible={deleteModalVisible}
+          transparent={true}
+          onRequestClose={() => setDeleteModalVisible(false)}
+        >
+          <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
+            <View style={[
+              styles.modalContent,
+              { 
+                backgroundColor: isDarkMode ? theme.surface : '#fff',
+                borderColor: isDarkMode ? theme.border : '#E2E8F0'
+              }
+            ]}>
+              <Text style={[
+                styles.modalTitle,
+                { color: isDarkMode ? theme.text : '#0F172A' }
+              ]}>
+                Delete Certificate
+              </Text>
+              <Text style={[
+                styles.modalMessage,
+                { color: isDarkMode ? theme.textSecondary : '#64748B' }
+              ]}>
+                Are you sure you want to delete this certificate?
+              </Text>
+              <View style={styles.modalButtons}>
+                <Button
+                  mode="outlined"
+                  onPress={() => setDeleteModalVisible(false)}
+                  style={[styles.modalButton, { borderColor: '#19C6C1' }]}
+                  labelStyle={{ color: '#19C6C1' }}
+                  title="Cancel"
+                />
+                <Button
+                  mode="contained"
+                  onPress={handleDeleteConfirm}
+                  style={[styles.modalButton, { backgroundColor: '#EF4444' }]}
+                  title="Delete"
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </GestureHandlerRootView>
   );
@@ -1269,62 +1469,123 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
   modalContent: {
+    width: '90%',
     padding: 24,
+    borderRadius: 16,
+    borderWidth: 1,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  modalButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 10,
-    marginBottom: 12,
-  },
-  modalOutlineButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 10,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-  modalCancelButton: {
-    padding: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  modalButtonText: {
-    fontSize: 15,
+    fontSize: 20,
     fontWeight: '600',
+    marginBottom: 12,
   },
-  modalInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
+  modalMessage: {
     fontSize: 16,
-    marginBottom: 16,
+    marginBottom: 24,
   },
-  modalButtonRow: {
+  modalButtons: {
     flexDirection: 'row',
+    justifyContent: 'flex-end',
     gap: 12,
   },
-  modalActionButton: {
+  modalButton: {
+    minWidth: 100,
+  },
+  snackbar: {
+    margin: 16,
+    borderRadius: 8,
+  },
+  viewerBackground: {
     flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+  },
+  viewerHeader: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    zIndex: 999,
+  },
+  viewerButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  closeButton: {
     padding: 12,
     borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
   },
-  modalActionButtonText: {
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  shareButtonText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  indicatorContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    left: 20,
+    padding: 12,
+    borderRadius: 8,
+    zIndex: 999,
+  },
+  indicatorText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: 'bold',
+  },
+  pageIndicator: {
+    color: '#fff',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+  },
+  optionsModalContent: {
+    width: '80%',
+    maxWidth: 300,
+    borderRadius: 16,
+    padding: 20,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  optionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  deleteButton: {
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  optionText: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 12,
   },
 });
 

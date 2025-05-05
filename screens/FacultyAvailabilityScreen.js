@@ -424,11 +424,48 @@ const FacultyAvailabilityScreen = () => {
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <StatusBar backgroundColor={theme.background} barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       {/* Header */}
-      <View style={{ backgroundColor: theme.surface, paddingTop: 18, paddingBottom: 12, paddingHorizontal: 0, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: theme.border, flexDirection: 'row', justifyContent: 'center' }}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ position: 'absolute', left: 18, top: 18, zIndex: 2 }}>
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
+      <View style={{
+        paddingTop: Platform.OS === 'ios' ? 30 : 15,
+        paddingBottom: 12,
+        paddingHorizontal: 10,
+        backgroundColor: isDarkMode ? (theme.background || '#101828') : '#fff',
+        shadowColor: isDarkMode ? '#000' : '#000',
+        shadowOffset: {
+          width: 0,
+          height: 1,
+        },
+        shadowOpacity: isDarkMode ? 0.4 : 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+        borderBottomWidth: isDarkMode ? 1 : 0,
+        borderBottomColor: isDarkMode ? '#2D3748' : 'transparent',
+        zIndex: 10,
+      }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4 }}>
+            <Ionicons name="arrow-back" size={26} color={isDarkMode ? '#fff' : '#0F172A'} />
         </TouchableOpacity>
-        <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text, textAlign: 'center', flex: 1 }}>Availability Checker</Text>
+          <Text style={{
+            fontSize: 24,
+            fontWeight: 'bold',
+            color: isDarkMode ? '#fff' : '#0F172A',
+            textAlign: 'center',
+            flex: 1
+          }}>
+            Faculty Finder
+          </Text>
+          <View style={{ width: 34 }} />
+        </View>
+        <Text style={{
+          color: isDarkMode ? '#fff' : '#64748B',
+          fontSize: 15,
+          marginTop: 6,
+          marginBottom: 4,
+          textAlign: 'center',
+          opacity: 0.8
+        }}>
+          Find faculty availability status
+        </Text>
       </View>
       <ScrollView contentContainerStyle={{ padding: 0, backgroundColor: theme.background, minHeight: '100%' }}>
         {/* Info/alert message */}

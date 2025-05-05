@@ -18,15 +18,19 @@ import { manipulateAsync } from 'expo-image-manipulator';
 
 // Define the color scheme consistent with the app
 const COLORS = {
-  primary: '#1e40af', // Richer blue
+  primary: '#19C6C1', // Teal for button
   primaryLight: '#3b82f6', // Lighter blue
   primaryGradient: ['#1e40af', '#3b82f6'], // Blue gradient
   secondary: '#ffffff', // White
-  text: '#0f172a', // Dark blue-gray for text
-  textSecondary: '#475569', // Gray for secondary text
+  text: '#1A2536',
+  textSecondary: '#64748B',
   error: '#ef4444',
-  background: '#f1f5f9', // Light gray background
+  background: '#E6F8F7', // Light teal background
   divider: '#e2e8f0', // Light gray for dividers
+  white: '#fff',
+  buttonText: '#fff',
+  border: '#D1E9E6',
+  shadow: 'rgba(16,24,40,0.08)',
 };
 
 // Generate section options from S01 to S30
@@ -345,164 +349,162 @@ const UserDetailsScreen = ({ navigation, onComplete }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={COLORS.primaryGradient}
-        style={styles.header}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
-        <Text style={styles.headerTitle}>Complete Your Profile</Text>
-        <Text style={styles.headerSubtitle}>Please provide your academic details</Text>
-      </LinearGradient>
-
-      <View style={styles.content}>
-        <View style={styles.formContainer}>
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Section</Text>
-            <TouchableOpacity
-              style={[styles.dropdownButton, section && styles.dropdownButtonSelected]}
-              onPress={() => setShowSectionModal(true)}
-              disabled={isLoading}
-            >
-              <Text style={[styles.dropdownButtonText, !section && styles.placeholderText]}>
-                {section || 'Select your section'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Year of Study</Text>
-            <TouchableOpacity
-              style={[styles.dropdownButton, year && styles.dropdownButtonSelected]}
-              onPress={() => setShowYearModal(true)}
-              disabled={isLoading}
-            >
-              <Text style={[styles.dropdownButtonText, !year && styles.placeholderText]}>
-                {year || 'Select your year'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Semester</Text>
-            <TouchableOpacity
-              style={[styles.dropdownButton, semester && styles.dropdownButtonSelected]}
-              onPress={() => setShowSemesterModal(true)}
-              disabled={isLoading}
-            >
-              <Text style={[styles.dropdownButtonText, !semester && styles.placeholderText]}>
-                {semester || 'Select your semester'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <Modal
-            visible={showSectionModal}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setShowSectionModal(false)}
-          >
-            <Pressable 
-              style={styles.modalOverlay}
-              onPress={() => setShowSectionModal(false)}
-            >
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Select Section</Text>
-                <ScrollView style={styles.optionsList}>
-                  {SECTION_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[styles.optionItem, section === option && styles.selectedOption]}
-                      onPress={() => {
-                        setSection(option);
-                        setShowSectionModal(false);
-                      }}
-                    >
-                      <Text style={[styles.optionText, section === option && styles.selectedOptionText]}>
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            </Pressable>
-          </Modal>
-
-          <Modal
-            visible={showYearModal}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setShowYearModal(false)}
-          >
-            <Pressable 
-              style={styles.modalOverlay}
-              onPress={() => setShowYearModal(false)}
-            >
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Select Year</Text>
-                <ScrollView style={styles.optionsList}>
-                  {YEAR_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[styles.optionItem, year === option && styles.selectedOption]}
-                      onPress={() => {
-                        setYear(option);
-                        setShowYearModal(false);
-                      }}
-                    >
-                      <Text style={[styles.optionText, year === option && styles.selectedOptionText]}>
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            </Pressable>
-          </Modal>
-
-          <Modal
-            visible={showSemesterModal}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setShowSemesterModal(false)}
-          >
-            <Pressable 
-              style={styles.modalOverlay}
-              onPress={() => setShowSemesterModal(false)}
-            >
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Select Semester</Text>
-                <ScrollView style={styles.optionsList}>
-                  {SEMESTER_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[styles.optionItem, semester === option && styles.selectedOption]}
-                      onPress={() => {
-                        setSemester(option);
-                        setShowSemesterModal(false);
-                      }}
-                    >
-                      <Text style={[styles.optionText, semester === option && styles.selectedOptionText]}>
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            </Pressable>
-          </Modal>
-
+      <View style={styles.headerContainer}>
+        <Text style={styles.headerTitle}>Set Up Your Profile</Text>
+        <Text style={styles.headerSubtitle}>Help us personalize your experience</Text>
+      </View>
+      <View style={styles.formArea}>
+        {/* Section Dropdown */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Section</Text>
           <TouchableOpacity
-            style={[styles.submitButton, isLoading && styles.disabledButton]}
-            onPress={saveUserDetails}
+            style={styles.dropdown}
+            onPress={() => setShowSectionModal(true)}
             disabled={isLoading}
+            activeOpacity={0.8}
           >
-            <Text style={styles.submitButtonText}>
-              {isLoading ? 'Loading...' : 'Continue'}
+            <Text style={[styles.dropdownText, !section && styles.placeholderText]}>
+              {section || 'Select Section'}
             </Text>
+            <Text style={styles.chevron}>▼</Text>
+          </TouchableOpacity>
+        </View>
+        {/* Year Dropdown */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Year</Text>
+          <TouchableOpacity
+            style={styles.dropdown}
+            onPress={() => setShowYearModal(true)}
+            disabled={isLoading}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.dropdownText, !year && styles.placeholderText]}>
+              {year || 'Select Year'}
+            </Text>
+            <Text style={styles.chevron}>▼</Text>
+          </TouchableOpacity>
+        </View>
+        {/* Semester Dropdown */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Semester</Text>
+          <TouchableOpacity
+            style={styles.dropdown}
+            onPress={() => setShowSemesterModal(true)}
+            disabled={isLoading}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.dropdownText, !semester && styles.placeholderText]}>
+              {semester || 'Select Semester'}
+            </Text>
+            <Text style={styles.chevron}>▼</Text>
           </TouchableOpacity>
         </View>
       </View>
+      <View style={styles.buttonArea}>
+        <TouchableOpacity
+          style={[styles.continueButton, isLoading && styles.disabledButton]}
+          onPress={saveUserDetails}
+          disabled={isLoading}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.continueButtonText}>
+            {isLoading ? 'Loading...' : 'Continue'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      <Modal
+        visible={showSectionModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSectionModal(false)}
+      >
+        <Pressable 
+          style={styles.modalOverlay}
+          onPress={() => setShowSectionModal(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Section</Text>
+            <ScrollView style={styles.optionsList}>
+              {SECTION_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[styles.optionItem, section === option && styles.selectedOption]}
+                  onPress={() => {
+                    setSection(option);
+                    setShowSectionModal(false);
+                  }}
+                >
+                  <Text style={[styles.optionText, section === option && styles.selectedOptionText]}>
+                    {option}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
+      <Modal
+        visible={showYearModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowYearModal(false)}
+      >
+        <Pressable 
+          style={styles.modalOverlay}
+          onPress={() => setShowYearModal(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Year</Text>
+            <ScrollView style={styles.optionsList}>
+              {YEAR_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[styles.optionItem, year === option && styles.selectedOption]}
+                  onPress={() => {
+                    setYear(option);
+                    setShowYearModal(false);
+                  }}
+                >
+                  <Text style={[styles.optionText, year === option && styles.selectedOptionText]}>
+                    {option}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
+      <Modal
+        visible={showSemesterModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSemesterModal(false)}
+      >
+        <Pressable 
+          style={styles.modalOverlay}
+          onPress={() => setShowSemesterModal(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Semester</Text>
+            <ScrollView style={styles.optionsList}>
+              {SEMESTER_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[styles.optionItem, semester === option && styles.selectedOption]}
+                  onPress={() => {
+                    setSemester(option);
+                    setShowSemesterModal(false);
+                  }}
+                >
+                  <Text style={[styles.optionText, semester === option && styles.selectedOptionText]}>
+                    {option}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -512,68 +514,91 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  header: {
+  headerContainer: {
     paddingTop: 60,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    paddingBottom: 18,
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: COLORS.secondary,
+    color: COLORS.text,
     marginBottom: 8,
+    textAlign: 'center',
   },
   headerSubtitle: {
     fontSize: 16,
-    color: COLORS.secondary,
-    opacity: 0.8,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: 10,
   },
-  content: {
+  formArea: {
     flex: 1,
-    padding: 20,
+    paddingHorizontal: 20,
+    justifyContent: 'flex-start',
   },
-  formContainer: {
-    backgroundColor: COLORS.secondary,
-    borderRadius: 15,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  inputContainer: {
-    marginBottom: 20,
+  inputGroup: {
+    marginBottom: 22,
   },
   label: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 8,
+    color: COLORS.textSecondary,
+    marginBottom: 6,
+    marginLeft: 6,
   },
-  dropdownButton: {
-    backgroundColor: COLORS.background,
-    borderRadius: 10,
-    padding: 15,
-    fontSize: 16,
-    color: COLORS.text,
-  },
-  dropdownButtonSelected: {
-    backgroundColor: COLORS.background,
-    borderColor: COLORS.primary,
+  dropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
     borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  dropdownButtonText: {
+  dropdownText: {
     fontSize: 16,
     color: COLORS.text,
   },
   placeholderText: {
     color: COLORS.textSecondary,
+  },
+  chevron: {
+    fontSize: 18,
+    color: COLORS.textSecondary,
+    marginLeft: 8,
+  },
+  buttonArea: {
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    backgroundColor: 'transparent',
+  },
+  continueButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+  },
+  continueButtonText: {
+    color: COLORS.buttonText,
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  disabledButton: {
+    backgroundColor: COLORS.primary,
+    opacity: 0.6,
   },
   modalOverlay: {
     flex: 1,
@@ -583,7 +608,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalContent: {
-    backgroundColor: COLORS.secondary,
+    backgroundColor: COLORS.white,
     borderRadius: 15,
     width: '100%',
     maxHeight: '80%',
@@ -606,31 +631,15 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   selectedOption: {
-    backgroundColor: COLORS.primaryLight,
+    backgroundColor: COLORS.primary,
   },
   optionText: {
     fontSize: 16,
     color: COLORS.text,
   },
   selectedOptionText: {
-    color: COLORS.secondary,
+    color: COLORS.buttonText,
     fontWeight: '500',
-  },
-  submitButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 10,
-    padding: 15,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  disabledButton: {
-    backgroundColor: COLORS.primaryLight,
-    opacity: 0.7,
-  },
-  submitButtonText: {
-    color: COLORS.secondary,
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 

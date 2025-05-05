@@ -12,6 +12,7 @@ import {
   Animated,
   FlatList,
   SafeAreaView,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,6 +20,7 @@ import { Linking, Alert } from 'react-native';
 import { COLORS } from '../constants/Colors';
 import { fetch } from 'expo/fetch';
 import { useTheme } from '../context/ThemeContext';
+import { Button } from 'react-native-paper';
 
 const CircularsScreen = ({ navigation }) => {
   const [circulars, setCirculars] = useState([]);
@@ -30,6 +32,8 @@ const CircularsScreen = ({ navigation }) => {
   const [sortType, setSortType] = useState('date');
   const [sortOrder, setSortOrder] = useState('desc');
   const [showFullScreenLoading, setShowFullScreenLoading] = useState(true);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [selectedCircular, setSelectedCircular] = useState(null);
 
   // Animation value for loading indicator
   const loadingOpacity = useRef(new Animated.Value(1)).current;
@@ -423,7 +427,16 @@ const CircularsScreen = ({ navigation }) => {
         </Text>
       </View>
       <View style={styles.tagContainer}>
-        
+        <TouchableOpacity
+          onPress={() => handleDeleteCircular(item)}
+          style={styles.deleteButton}
+        >
+          <Ionicons 
+            name="trash-outline" 
+            size={20} 
+            color={isDarkMode ? '#EF4444' : '#EF4444'} 
+          />
+        </TouchableOpacity>
         <Ionicons 
           name="chevron-forward" 
           size={16} 
@@ -476,6 +489,42 @@ const CircularsScreen = ({ navigation }) => {
     </View>
   );
 
+  const handleDeleteCircular = (circular) => {
+    setSelectedCircular(circular);
+    setDeleteModalVisible(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedCircular) return;
+
+    try {
+      // Remove the circular from originalData
+      setOriginalData(prevData => 
+        prevData.filter(item => item.filename !== selectedCircular.filename)
+      );
+
+      // Update the grouped data
+      const month = getMonthFromDateString(selectedCircular.date);
+      const year = getYearFromDateString(selectedCircular.date);
+      if (month && year) {
+        const key = `${year} ${month}`;
+        if (dataByGroupRef.current[key]) {
+          dataByGroupRef.current[key].data = dataByGroupRef.current[key].data.filter(
+            item => item.filename !== selectedCircular.filename
+          );
+        }
+      }
+
+      showSnackbar('Circular deleted successfully');
+    } catch (error) {
+      console.error('Delete error:', error);
+      showSnackbar('Failed to delete circular');
+    } finally {
+      setDeleteModalVisible(false);
+      setSelectedCircular(null);
+    }
+  };
+
   return (
     <SafeAreaView style={[
       styles.container,
@@ -483,13 +532,23 @@ const CircularsScreen = ({ navigation }) => {
     ]}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       
-      {/* Header */}
       <View style={{
-        paddingTop: Platform.OS === 'ios' ? 30 : 15,
-        paddingBottom: 0,
-        paddingHorizontal: 10,
-        backgroundColor: isDarkMode ? (theme.background || '#101828') : '#fff'
-      }}>
+          paddingTop: Platform.OS === 'ios' ? 30 : 15,
+          paddingBottom: 12,
+          paddingHorizontal: 10,
+          backgroundColor: isDarkMode ? (theme.background || '#101828') : '#fff',
+          shadowColor: isDarkMode ? '#000' : '#000',
+          shadowOffset: {
+            width: 0,
+            height: 1,
+          },
+          shadowOpacity: isDarkMode ? 0.4 : 0.1,
+          shadowRadius: 4,
+          elevation: 3,
+          borderBottomWidth: isDarkMode ? 1 : 0,
+          borderBottomColor: isDarkMode ? '#2D3748' : 'transparent',
+          zIndex: 10,
+        }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4 }}>
             <Ionicons name="arrow-back" size={26} color={isDarkMode ? '#fff' : '#0F172A'} />
@@ -628,25 +687,50 @@ const CircularsScreen = ({ navigation }) => {
       />
 
       {showFullScreenLoading && (
-        <Animated.View style={[styles.loadingOverlay, { opacity: loadingOpacity }]}>
-          <View style={styles.loadingIndicator}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>
+        <Animated.View style={[
+          styles.loadingOverlay,
+          { 
+            opacity: loadingOpacity,
+            backgroundColor: isDarkMode ? 'rgba(16, 24, 40, 0.9)' : 'rgba(255, 255, 255, 0.9)'
+          }
+        ]}>
+          <View style={[
+            styles.loadingIndicator,
+            { backgroundColor: isDarkMode ? theme.surface : '#fff' }
+          ]}>
+            <ActivityIndicator size="large" color="#19C6C1" />
+            <Text style={[
+              styles.loadingText,
+              { color: isDarkMode ? theme.text : '#0F172A' }
+            ]}>
               {loadingProgress > 0
                 ? `Loaded ${loadingProgress} items...`
                 : 'Connecting to server...'}
             </Text>
             {loadingProgress >= 5 && (
-              <Text style={styles.loadingSubtext}>Almost ready...</Text>
+              <Text style={[
+                styles.loadingSubtext,
+                { color: isDarkMode ? theme.textSecondary : '#64748B' }
+              ]}>
+                Almost ready...
+              </Text>
             )}
           </View>
         </Animated.View>
       )}
 
       {loading && !showFullScreenLoading && originalData.length > 0 && (
-        <View style={styles.streamingIndicator}>
-          <ActivityIndicator size="small" color={COLORS.primary} />
-          <Text style={styles.streamingText}>Loading more... ({loadingProgress})</Text>
+        <View style={[
+          styles.streamingIndicator,
+          { backgroundColor: isDarkMode ? theme.surface : '#fff' }
+        ]}>
+          <ActivityIndicator size="small" color="#19C6C1" />
+          <Text style={[
+            styles.streamingText,
+            { color: isDarkMode ? theme.text : '#0F172A' }
+          ]}>
+            Loading more... ({loadingProgress})
+          </Text>
         </View>
       )}
 
@@ -658,6 +742,54 @@ const CircularsScreen = ({ navigation }) => {
           <Ionicons name="refresh" size={20} color="#fff" />
         </TouchableOpacity>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={deleteModalVisible}
+        transparent={true}
+        onRequestClose={() => setDeleteModalVisible(false)}
+      >
+        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
+          <View style={[
+            styles.modalContent,
+            { 
+              backgroundColor: isDarkMode ? theme.surface : '#fff',
+              borderColor: isDarkMode ? theme.border : '#E2E8F0'
+            }
+          ]}>
+            <Text style={[
+              styles.modalTitle,
+              { color: isDarkMode ? theme.text : '#0F172A' }
+            ]}>
+              Delete Circular
+            </Text>
+            <Text style={[
+              styles.modalMessage,
+              { color: isDarkMode ? theme.textSecondary : '#64748B' }
+            ]}>
+              Are you sure you want to delete this circular?
+            </Text>
+            <View style={styles.modalButtons}>
+              <Button
+                mode="outlined"
+                onPress={() => setDeleteModalVisible(false)}
+                style={[styles.modalButton, { borderColor: '#19C6C1' }]}
+                textColor="#19C6C1"
+              >
+                Cancel
+              </Button>
+              <Button
+                mode="contained"
+                onPress={handleDeleteConfirm}
+                style={[styles.modalButton, { backgroundColor: '#EF4444' }]}
+                textColor="#FFFFFF"
+              >
+                Delete
+              </Button>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -755,12 +887,10 @@ const styles = StyleSheet.create({
 
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   loadingIndicator: {
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
@@ -773,13 +903,11 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#000',
     fontWeight: '500',
   },
   loadingSubtext: {
     marginTop: 4,
     fontSize: 12,
-    color: '#666',
   },
   streamingIndicator: {
     position: 'absolute',
@@ -787,7 +915,6 @@ const styles = StyleSheet.create({
     left: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
     padding: 12,
     borderRadius: 24,
     shadowColor: '#000',
@@ -799,7 +926,6 @@ const styles = StyleSheet.create({
   streamingText: {
     marginLeft: 8,
     fontSize: 14,
-    color: '#000',
     fontWeight: '500',
   },
   refreshButton: {
@@ -829,6 +955,43 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#666',
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '90%',
+    padding: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  modalMessage: {
+    fontSize: 16,
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  modalButton: {
+    minWidth: 100,
+  },
+  tagContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  deleteButton: {
+    padding: 8,
+    marginRight: 8,
   },
 });
 

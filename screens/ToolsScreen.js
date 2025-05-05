@@ -61,7 +61,7 @@ const tools = [
     id: 6,
     title: 'CGPA',
     icon: 'calculator',
-    screen: 'PreviewScreen',
+    screen: 'CGPAScreen',
     color: '#F39C12',
     darkColor: '#E65100'
   }

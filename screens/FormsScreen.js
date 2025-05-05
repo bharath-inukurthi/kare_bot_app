@@ -10,19 +10,21 @@ import {
   Platform,
   Modal,
   TextInput,
-  Alert
+  Alert,
+  SafeAreaView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import WebView from 'react-native-webview';
-import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS } from '../constants/Colors';
 import { StatusBar } from 'react-native';
+import { useTheme } from '../context/ThemeContext';
 
-const FormsScreen = () => {
+const FormsScreen = ({ navigation }) => {
   const [forms, setForms] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedForm, setSelectedForm] = useState(null);
+
+  const { isDarkMode, theme } = useTheme();
 
   useEffect(() => {
     const fetchForms = async () => {
@@ -47,7 +49,6 @@ const FormsScreen = () => {
     fetchForms();
   }, []);
 
-
   const filteredForms = forms.filter(form =>
     form.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -66,285 +67,237 @@ const FormsScreen = () => {
 
   const renderFormItem = ({ item }) => (
     <TouchableOpacity
-      style={styles.formCard}
+      style={[
+        styles.formCard,
+        isDarkMode && styles.formCardDark
+      ]}
       onPress={() => handleDownload(item.url)}
     >
       <View style={styles.iconContainer}>
-        <Ionicons name="document-text" size={32} color={COLORS.primary} />
+        <Ionicons name="document-text" size={24} color="#FF4444" />
       </View>
       <View style={styles.formInfo}>
-        <Text style={styles.formTitle}>{item.title}</Text>
-        <Text style={styles.downloadText}>Tap to download</Text>
+        <Text style={[
+          styles.formTitle,
+          isDarkMode && styles.formTitleDark
+        ]}>
+          {item.title}
+        </Text>
       </View>
-      <Ionicons name="download-outline" size={24} color={COLORS.primary} />
+      <Ionicons name="download-outline" size={24} color="#00BFA5" />
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
-      <LinearGradient
-        colors={COLORS.primaryGradient}
-        style={styles.header}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
-        <Text style={styles.headerTitle}>Forms</Text>
-        <Text style={styles.headerSubtitle}>Access University Forms</Text>
-      </LinearGradient>
+    <SafeAreaView style={[
+      styles.container,
+      isDarkMode && styles.containerDark
+    ]}>
+      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+      
+      {/* Header */}
+      <View style={{
+        paddingTop: Platform.OS === 'ios' ? 30 : 15,
+        paddingBottom: 12,
+        paddingHorizontal: 10,
+        backgroundColor: isDarkMode ? (theme.background || '#101828') : '#fff',
+        shadowColor: isDarkMode ? '#000' : '#000',
+        shadowOffset: {
+          width: 0,
+          height: 1,
+        },
+        shadowOpacity: isDarkMode ? 0.4 : 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+        borderBottomWidth: isDarkMode ? 1 : 0,
+        borderBottomColor: isDarkMode ? '#2D3748' : 'transparent',
+        zIndex: 10,
+      }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4 }}>
+            <Ionicons name="arrow-back" size={26} color={isDarkMode ? '#fff' : '#0F172A'} />
+          </TouchableOpacity>
+          <Text style={{
+            fontSize: 24,
+            fontWeight: 'bold',
+            color: isDarkMode ? '#fff' : '#0F172A',
+            textAlign: 'center',
+            flex: 1
+          }}>
+            Forms
+          </Text>
+          <View style={{ width: 34 }} />
+        </View>
+        <Text style={{
+          color: isDarkMode ? '#fff' : '#64748B',
+          fontSize: 15,
+          marginTop: 6,
+          marginBottom: 4,
+          textAlign: 'center',
+          opacity: 0.8
+        }}>
+          Download university forms & documents
+        </Text>
+      </View>
+
+      {/* Search Bar */}
+      <View style={{ 
+        paddingHorizontal: 20, 
+        marginTop: 18, 
+        marginBottom: 8,
+        backgroundColor: isDarkMode ? '#101828' : '#F8FAFC',
+      }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: isDarkMode ? '#232B3A' : '#F3F6FA',
+            borderRadius: 12,
+            paddingHorizontal: 14,
+            height: 44,
+          }}
+        >
+          <Ionicons
+            name="search"
+            size={20}
+            color={isDarkMode ? '#fff' : '#64748B'}
+            style={{ marginRight: 8 }}
+          />
       <TextInput
-        style={styles.searchInput}
+            style={{
+              flex: 1,
+              fontSize: 16,
+              color: isDarkMode ? '#fff' : '#0F172A',
+              backgroundColor: 'transparent',
+            }}
         placeholder="Search forms..."
+            placeholderTextColor={isDarkMode ? '#A0AEC0' : '#64748B'}
         value={searchQuery}
         onChangeText={setSearchQuery}
-        placeholderTextColor={COLORS.textSecondary}
-      />
-
-      {selectedForm && (
-        <Modal
-          animationType="slide"
-          transparent={false}
-          visible={!!selectedForm}
-          onRequestClose={() => setSelectedForm(null)}>
-          <View style={styles.modalContainer}>
-            <WebView
-              source={{ uri: selectedForm.url }}
-              style={styles.webview}
-              startInLoadingState={true}
-              renderLoading={() => (
-                <ActivityIndicator
-                  color={COLORS.primary}
-                  size="large"
-                  style={styles.loadingIndicator}
-                />
-              )}
-            />
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setSelectedForm(null)}>
-              <Ionicons name="close" size={28} color="#ffffff" />
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons 
+                name="close-circle" 
+                size={20} 
+                color={isDarkMode ? '#A0AEC0' : '#64748B'} 
+              />
             </TouchableOpacity>
-          </View>
-        </Modal>
       )}
-      {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
-      )}
+      </View>
 
       <FlatList
         data={filteredForms}
         renderItem={renderFormItem}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          !loading && (
+            <View style={styles.emptyContainer}>
+              <Ionicons 
+                name="document-text-outline" 
+                size={60} 
+                color={isDarkMode ? '#4A4A4A' : '#DEDEDE'} 
+              />
+              <Text style={[
+                styles.emptyText,
+                isDarkMode && styles.emptyTextDark
+              ]}>
+                {searchQuery ? "No matching forms" : "No forms available"}
+              </Text>
+            </View>
+          )
+        }
       />
+
+      {loading && (
+        <View style={[
+          styles.loadingOverlay,
+          isDarkMode && styles.loadingOverlayDark
+        ]}>
+          <ActivityIndicator size="large" color="#19C6C1" />
     </View>
+      )}
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: '#F8FAFC',
   },
-  header: {
-    paddingTop: Platform.OS === 'ios' ? 48 : StatusBar.currentHeight-25,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.secondary,
-    marginBottom: 4,
-    textShadowColor: 'rgba(0, 0, 0, 0.2)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: COLORS.secondary,
-    opacity: 0.9,
-    textAlignHorizontal:'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.1)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 1,
+  containerDark: {
+    backgroundColor: '#101828',
   },
   listContainer: {
-    padding: 14,
+    padding: 16,
   },
   formCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: 10,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 14,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  formCardDark: {
+    backgroundColor: '#1A2536',
+    shadowColor: '#000000',
+    shadowOpacity: 0.2,
   },
   iconContainer: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
-    borderRadius: 24,
-    backgroundColor: COLORS.primaryLight + '10'
+    borderRadius: 20,
   },
   formInfo: {
     flex: 1,
-    marginRight: 8
+    marginRight: 8,
   },
   formTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 4
+    fontSize: 15,
+    fontWeight: '400',
+    color: '#000000',
   },
-  downloadText: {
-    fontSize: 14,
-    color: COLORS.textSecondary
-  },
-  searchInput: {
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginHorizontal: 16,
-    marginVertical: 12,
-    borderRadius: 12,
-    fontSize: 16,
-    color: COLORS.text,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2
+  formTitleDark: {
+    color: '#FFFFFF',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 1000
   },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#fff'
+  loadingOverlayDark: {
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
-  webview: {
-    flex: 1
-  },
-  closeButton: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 40 : 10,
-    right: 10,
-    backgroundColor: COLORS.primary,
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000
-  },
-  loadingIndicator: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: [{ translateX: -15 }, { translateY: -15 }]
-  },
-  
-  formInfo: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  formTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 4,
-    letterSpacing: 0.1,
-  },
-  downloadText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    letterSpacing: 0.1,
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
+  emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    zIndex: 999,
+    padding: 40,
+    minHeight: 300,
   },
-  loadingIndicator: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  searchInput: {
-    backgroundColor: COLORS.secondary,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginHorizontal: 16,
+  emptyText: {
     marginTop: 16,
-    marginBottom: 8,
-    fontSize: 16,
-    color: COLORS.text,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    fontSize: 15,
+    color: '#666666',
+    textAlign: 'center',
   },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: COLORS.secondary,
+  emptyTextDark: {
+    color: '#A0AEC0',
   },
-  webview: {
-    flex: 1,
-    marginTop: Platform.OS === 'ios' ? 48 : 24,
-    backgroundColor: COLORS.secondary,
-  },
-  closeButton: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 48 : StatusBar.currentHeight + 16,
-    right: 16,
-    backgroundColor: COLORS.primary,
-    borderRadius: 20,
-    padding: 8,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  }
 });
+
 export default FormsScreen;

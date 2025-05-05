@@ -19,6 +19,7 @@ import {
   Image,
 } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Provider as PaperProvider } from 'react-native-paper';
 import { initializeApp, getApps } from "firebase/app";
 import { 
   getAuth, 
@@ -51,6 +52,8 @@ import PreviewScreen from './screens/PreviewScreen';
 import CircularsScreen from './screens/CircularsScreen';
 import CertificatesScreen from './screens/CertificatesScreen';
 import ToolsScreen from './screens/ToolsScreen';
+import CGPAScreen from './screens/CGPAScreen';
+import SignInScreen from './screens/SignInScreen';
 
 // Prevents multiple web popup instances
 WebBrowser.maybeCompleteAuthSession();
@@ -116,6 +119,7 @@ const MainStack = () => {
       <Stack.Screen name="CircularsScreen" component={CircularsScreen} />
       <Stack.Screen name="FormsScreen" component={FormsScreen} />
       <Stack.Screen name="CertificatesScreen" component={CertificatesScreen} />
+      <Stack.Screen name="CGPAScreen" component={CGPAScreen} />
     </Stack.Navigator>
   );
 };
@@ -445,164 +449,45 @@ export default function App() {
   // Render login screen if not authenticated
   if (!user) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor={COLORS.gradient.start} />
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{flex: 1}}
-        >
-          <ScrollView contentContainerStyle={styles.scrollContainer}>
-            <View style={styles.loginContainer}>
-              <Text style={[styles.welcomeText, { 
-                textShadowColor: 'rgba(0, 82, 204, 0.25)', 
-                textShadowOffset: { width: 0, height: 3 }, 
-                textShadowRadius: 6 
-              }]}>
-                Welcome to Kare Bot
-              </Text>
-              <Text style={[styles.headerSubtitle, { 
-                opacity: 0.95, 
-                letterSpacing: 1 
-              }]}>
-                Kalasalingam University
-              </Text>
-              
-              <Text style={[styles.descriptionText, {paddingBottom: 10, fontSize: 15}]}>
-                Sign in with your
-              </Text>
-              <Text style={styles.descriptionText}>
-                @klu.ac.in email to continue
-              </Text>
-              
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Email (@klu.ac.in)"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Password (min 6 characters)"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                />
-              </View>
-              
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={() => handleEmailAuth(false)}
-                disabled={isLoading}
-              >
-                <Text style={styles.actionButtonText}>
-                  {isLoading ? 'Processing...' : 'Sign In with Email'}
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.secondaryButton}
-                onPress={() => handleEmailAuth(true)}
-                disabled={isLoading}
-              >
-                <Text style={styles.secondaryButtonText}>
-                  {isLoading ? 'Processing...' : 'Sign Up with Email'}
-                </Text>
-              </TouchableOpacity>
-              
-              <View style={styles.divider}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>OR</Text>
-                <View style={styles.dividerLine} />
-              </View>
-              
-              <TouchableOpacity 
-                style={styles.googleButton}
-                onPress={() => {
-                  console.log('Starting Google sign-in...');
-                  setIsLoading(true);
-                  
-                  // Use proper configuration for the platform
-                  promptAsync({
-                    useProxy: Platform.OS !== 'web' && __DEV__, // Use proxy in Expo Go
-                    showInRecents: true,
-                  }).then(result => {
-                    console.log('Google sign-in result:', result.type);
-                    if (result.type !== 'success') {
-                      setIsLoading(false);
-                    }
-                    // Success case handled by useEffect
-                  }).catch(error => {
-                    console.error('Google sign-in error:', error);
-                    setIsLoading(false);
-                    Alert.alert('Authentication Error', 'Error starting Google authentication');
-                  });
-                }}
-                disabled={!request || isLoading}
-              >
-                <Text style={styles.googleButtonText}>
-                  Sign in with Google
-                </Text>
-              </TouchableOpacity>
-              
-              {/* Debug tools - only shown in development mode */}
-              {__DEV__ && (
-                <View style={styles.debugContainer}>
-                  <TouchableOpacity 
-                    style={styles.debugButton}
-                    onPress={() => {
-                      console.log('Debug Info:');
-                      console.log('- Firebase Config:', firebaseConfig);
-                      console.log('- Google Auth Client IDs:', {
-                        expo: request?.clientId,
-                        android: request?.androidClientId,
-                        ios: request?.iosClientId,
-                        web: request?.webClientId
-                      });
-                      Alert.alert('Debug Info', 'Check console for details');
-                    }}
-                  >
-                    <Text style={styles.debugButtonText}>Show Auth Debug Info</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.debugButton}
-                    onPress={createTestUser}
-                    disabled={isLoading}
-                  >
-                    <Text style={styles.debugButtonText}>
-                      {isLoading ? 'Processing...' : 'Create Test User'}
-                    </Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.debugButton}
-                    onPress={() => setDebugMode(!debugMode)}
-                  >
-                    <Text style={styles.debugButtonText}>
-                      {debugMode ? 'Disable Debug Mode' : 'Enable Debug Mode'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+      <SignInScreen
+        email={email}
+        setEmail={setEmail}
+        password={password}
+        setPassword={setPassword}
+        isLoading={isLoading}
+        handleEmailAuth={handleEmailAuth}
+        handleGoogleSignIn={() => {
+          setIsLoading(true);
+          promptAsync({
+            useProxy: Platform.OS !== 'web' && __DEV__,
+            showInRecents: true,
+          }).then(result => {
+            if (result.type !== 'success') {
+              setIsLoading(false);
+            }
+          }).catch(error => {
+            setIsLoading(false);
+            Alert.alert('Authentication Error', 'Error starting Google authentication');
+          });
+        }}
+        createTestUser={createTestUser}
+        debugMode={debugMode}
+        setDebugMode={setDebugMode}
+      />
     );
   }
 
   // User is authenticated and has details, show the tab navigator
   return (
-    <ThemeProvider>
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <NavigationContainer>
-          <MainStack />
-        </NavigationContainer>
-      </GestureHandlerRootView>
-    </ThemeProvider>
+    <PaperProvider>
+      <ThemeProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <NavigationContainer>
+            <MainStack />
+          </NavigationContainer>
+        </GestureHandlerRootView>
+      </ThemeProvider>
+    </PaperProvider>
   );
 }
 
