@@ -15,36 +15,21 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import MCIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
+import { useTheme } from '../context/ThemeContext';
 
-// Exact color palette from the image
-const LIGHT_COLORS = {
-  primary: '#4CDBC4', // for user bubble, send button, bot icon background
-  secondary: '#FFFFFF',
-  accent: '#4CDBC4',
-  text: '#172B4D',
-  background: '#FFFFFF',
-  botBubble: '#E5FAF6',
-  userBubble: '#4CDBC4',
-  chip: '#FFFFFF',
-  chipBorder: '#E5FAF6',
-  chipText: '#4CDBC4',
-  inputBg: '#FFFFFF',
-  inputBorder: '#E5FAF6',
-};
-const DARK_COLORS = {
-  primary: '#4CDBC4', // for user bubble, send button, bot icon background
-  secondary: '#232B3B',
-  accent: '#4CDBC4',
-  text: '#F4F5F7',
-  background: '#101624',
-  botBubble: '#232B3B',
-  userBubble: '#4CDBC4',
-  chip: '#232B3B',
-  chipBorder: '#232B3B',
-  chipText: '#4CDBC4',
-  inputBg: '#232B3B',
-  inputBorder: '#232B3B',
-};
+// Color constants
+const TEAL = '#4CDBC4';
+const LIGHT_TEAL = '#E5FAF6';
+const RED = '#F56565';
+const GREEN = '#22C55E';
+const WHITE = '#fff';
+const CARD_BG_LIGHT = '#fff';
+const CARD_BG_DARK = '#1A2536';
+const BG_LIGHT = '#F8FAFC';
+const BG_DARK = '#101828';
+const TEXT_DARK = '#0F172A';
+const TEXT_LIGHT = '#fff';
+const TEXT_SECONDARY = '#64748B';
 
 // Initial messages to show in the chat
 const INITIAL_MESSAGES = [
@@ -76,11 +61,9 @@ const ChatBotScreen = () => {
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false); // Theme toggle for demo
   const flatListRef = useRef(null);
-  const COLORS = isDarkMode ? DARK_COLORS : LIGHT_COLORS;
   const navigation = useNavigation();
-  const headerTextColor = isDarkMode ? '#fff' : '#000';
+  const { isDarkMode, theme } = useTheme();
 
   // Scroll to the bottom of the chat when new messages are added
   useEffect(() => {
@@ -139,25 +122,29 @@ const ChatBotScreen = () => {
         isUser ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }
       ]}>
         {!isUser && (
-          <View style={[styles.botIconCircle, { backgroundColor: COLORS.primary }]}> 
-            <MCIcon name="robot-outline" size={22} color={'#fff'} />
+          <View style={[styles.botIconCircle, { backgroundColor: TEAL }]}> 
+            <MCIcon name="robot-outline" size={22} color={WHITE} />
           </View>
         )}
         <View style={[
           isUser ? styles.userBubble : styles.messageBubble,
           isUser
-            ? { backgroundColor: COLORS.userBubble, marginLeft: 40 }
-            : { backgroundColor: COLORS.botBubble, borderBottomLeftRadius: 4, marginRight: 8 }
+            ? { backgroundColor: TEAL, marginLeft: 40 }
+            : { 
+                backgroundColor: isDarkMode ? theme.surface : LIGHT_TEAL, 
+                borderBottomLeftRadius: 4, 
+                marginRight: 8 
+              }
         ]}>
           <Text style={[
             styles.messageText,
-            isUser ? { color: '#fff' } : { color: COLORS.text }
+            isUser ? { color: WHITE } : { color: isDarkMode ? theme.text : TEXT_DARK }
           ]}>
             {item.text}
           </Text>
           <Text style={[
             styles.timestampText,
-            isUser ? { color: 'rgba(23,43,77,0.5)', textAlign: 'right' } : { color: 'rgba(23,43,77,0.5)', textAlign: 'right' }
+            { color: isDarkMode ? 'rgba(255,255,255,0.5)' : 'rgba(23,43,77,0.5)', textAlign: 'right' }
           ]}>
             {item.timestamp}
           </Text>
@@ -172,14 +159,21 @@ const ChatBotScreen = () => {
 
     return (
       <View style={[styles.messageRow, { justifyContent: 'flex-start' }]}> 
-        <View style={[styles.botIconCircle, { backgroundColor: COLORS.primary }]}> 
-          <MCIcon name="robot-outline" size={22} color={'#fff'} />
+        <View style={[styles.botIconCircle, { backgroundColor: TEAL }]}> 
+          <MCIcon name="robot-outline" size={22} color={WHITE} />
         </View>
-        <View style={[styles.messageBubble, { backgroundColor: COLORS.botBubble, borderBottomLeftRadius: 4, marginRight: 8 }]}> 
+        <View style={[
+          styles.messageBubble, 
+          { 
+            backgroundColor: isDarkMode ? theme.surface : LIGHT_TEAL, 
+            borderBottomLeftRadius: 4, 
+            marginRight: 8 
+          }
+        ]}> 
           <View style={styles.typingDotsContainer}>
-            <View style={[styles.typingDot, { backgroundColor: COLORS.primary }]} />
-            <View style={[styles.typingDot, { backgroundColor: COLORS.primary, opacity: 0.7 }]} />
-            <View style={[styles.typingDot, { backgroundColor: COLORS.primary, opacity: 0.4 }]} />
+            <View style={[styles.typingDot, { backgroundColor: TEAL }]} />
+            <View style={[styles.typingDot, { backgroundColor: TEAL, opacity: 0.7 }]} />
+            <View style={[styles.typingDot, { backgroundColor: TEAL, opacity: 0.4 }]} />
           </View>
         </View>
       </View>
@@ -194,18 +188,26 @@ const ChatBotScreen = () => {
   const BOTTOM_BAR_HEIGHT = 110;
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: COLORS.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDarkMode ? theme.background : BG_LIGHT }]}>
       {/* Header with back and history icons */}
-      <View style={[styles.header, { backgroundColor: COLORS.background, borderBottomColor: COLORS.inputBorder }]}>
+      <View style={[
+        styles.header, 
+        { 
+          backgroundColor: isDarkMode ? theme.background : WHITE,
+          borderBottomColor: isDarkMode ? theme.border : LIGHT_TEAL
+        }
+      ]}>
         <TouchableOpacity style={styles.headerIcon} onPress={() => navigation.goBack()}>
-          <Icon name="arrow-back" size={26} color={headerTextColor} />
+          <Icon name="arrow-back" size={26} color={isDarkMode ? theme.text : TEXT_DARK} />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
-          <Text style={[styles.headerTitle, { color: headerTextColor }]}>Ask KARE</Text>
-          <Text style={[styles.headerSubtitle, { color: headerTextColor, opacity: 0.7 }]}>Get quick answers about campus</Text>
+          <Text style={[styles.headerTitle, { color: isDarkMode ? theme.text : TEXT_DARK }]}>Ask KARE</Text>
+          <Text style={[styles.headerSubtitle, { color: isDarkMode ? theme.textSecondary : TEXT_SECONDARY }]}>
+            Get quick answers about campus
+          </Text>
         </View>
         <TouchableOpacity style={styles.headerIcon} onPress={() => {/* show history */}}>
-          <Icon name="history" size={26} color={headerTextColor} />
+          <Icon name="history" size={26} color={isDarkMode ? theme.text : TEXT_DARK} />
         </TouchableOpacity>
       </View>
 
@@ -240,10 +242,16 @@ const ChatBotScreen = () => {
             keyExtractor={(item, idx) => idx.toString()}
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={[styles.suggestionChip, { backgroundColor: COLORS.chip, borderColor: COLORS.chipBorder }]}
+                style={[
+                  styles.suggestionChip, 
+                  { 
+                    backgroundColor: isDarkMode ? theme.surface : WHITE,
+                    borderColor: isDarkMode ? theme.border : LIGHT_TEAL
+                  }
+                ]}
                 onPress={() => handleSuggestionPress(item)}
               >
-                <Text style={[styles.suggestionChipText, { color: COLORS.chipText }]}>{item}</Text>
+                <Text style={[styles.suggestionChipText, { color: TEAL }]}>{item}</Text>
               </TouchableOpacity>
             )}
             contentContainerStyle={{ paddingHorizontal: 10 }}
@@ -253,15 +261,18 @@ const ChatBotScreen = () => {
         <View style={styles.inputBarWrapper}>
           <View style={[
             styles.inputBar,
-            { backgroundColor: isDarkMode ? '#232B3B' : '#F4F8FB' }
+            { backgroundColor: isDarkMode ? theme.surface : '#EDF2F7' }
           ]}>
             <TextInput
               style={[
                 styles.input,
-                { color: COLORS.text, backgroundColor: 'transparent' }
+                { 
+                  color: isDarkMode ? theme.text : TEXT_DARK,
+                  backgroundColor: 'transparent'
+                }
               ]}
               placeholder="Ask a question..."
-              placeholderTextColor={isDarkMode ? '#6C7A89' : '#B0BEC5'}
+              placeholderTextColor={isDarkMode ? theme.textSecondary : TEXT_SECONDARY}
               value={inputText}
               onChangeText={setInputText}
               multiline
@@ -273,17 +284,15 @@ const ChatBotScreen = () => {
             style={[
               styles.sendButton,
               inputText.trim() === '' && styles.sendButtonDisabled,
-              { backgroundColor: COLORS.primary }
+              { backgroundColor: TEAL }
             ]}
             onPress={handleSendMessage}
             disabled={inputText.trim() === ''}
           >
-            <Icon name="send" size={26} color={'#fff'} />
+            <Icon name="send" size={26} color={WHITE} />
           </TouchableOpacity>
         </View>
       </View>
-
-    
     </SafeAreaView>
   );
 };
@@ -329,6 +338,7 @@ const styles = StyleSheet.create({
   messagesList: {
     paddingHorizontal: 16,
     paddingBottom: 0,
+    paddingTop:10
   },
   messageRow: {
     marginVertical: 5,
@@ -355,7 +365,6 @@ const styles = StyleSheet.create({
   },
   userBubble: {
     maxWidth: '80%',
-    backgroundColor: LIGHT_COLORS.userBubble,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     borderBottomLeftRadius: 16,

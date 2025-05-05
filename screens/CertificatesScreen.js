@@ -116,27 +116,27 @@ const CertificatesScreen = ({ navigation }) => {
     const keyboardWillHide = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
       () => {
-        setKeyboardHeight(-5);
+        setKeyboardHeight(0);
         setIsKeyboardVisible(false);
       }
     );
-
-    // Focus the input when modal becomes visible
-    if (showNameModal) {
-      const timer = setTimeout(() => {
-        if (inputRef.current) {
-          inputRef.current.focus();
-        }
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-
+  
     return () => {
       keyboardWillShow.remove();
       keyboardWillHide.remove();
     };
+  }, []);
+  
+  // Add this useEffect to focus the input when the modal appears
+  useEffect(() => {
+    if (showNameModal && inputRef.current) {
+      // Slightly delay focusing to ensure the modal is fully rendered
+      const timer = setTimeout(() => {
+        inputRef.current.focus();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
   }, [showNameModal]);
-
   // Directory setup
   const setupDirectories = async () => {
     try {
@@ -306,15 +306,15 @@ const CertificatesScreen = ({ navigation }) => {
   // Common function to process and save selected images
   const processSelectedImage = async (imageUri) => {
     try {
-      setShowNameModal(true); // Show modal first
       const fileName = await promptForFileName();
       
       if (!fileName) {
-        return;
+        return; // User cancelled
       }
       
       setLoading(true);
       
+      // Rest of your existing code...
       // Create destination path for internal storage
       const destinationUri = CERTIFICATES_DIRECTORY + fileName;
       
@@ -574,8 +574,9 @@ const CertificatesScreen = ({ navigation }) => {
   // File name prompt handling
   const promptForFileName = () => {
     return new Promise((resolve) => {
-      setFileNameResolver(() => resolve);
       setTempFileName('');
+      setFileNameResolver(() => resolve);
+      setShowNameModal(true);
     });
   };
 
@@ -799,55 +800,32 @@ const CertificatesScreen = ({ navigation }) => {
   const NameCertificateModal = () => {
     const [keyboardHeight, setKeyboardHeight] = useState(0);
     const inputRef = useRef(null);
-    const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
     useEffect(() => {
       const keyboardWillShow = Keyboard.addListener(
         Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
         (e) => {
           setKeyboardHeight(e.endCoordinates.height);
-          setIsKeyboardVisible(true);
         }
       );
       const keyboardWillHide = Keyboard.addListener(
         Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
         () => {
-          setKeyboardHeight(-5);
-          setIsKeyboardVisible(false);
+          setKeyboardHeight(0);
         }
       );
-
-      // Focus the input when modal becomes visible
-      if (showNameModal) {
-        const timer = setTimeout(() => {
-          if (inputRef.current) {
-            inputRef.current.focus();
-          }
-        }, 300);
-        return () => clearTimeout(timer);
-      }
 
       return () => {
         keyboardWillShow.remove();
         keyboardWillHide.remove();
       };
-    }, [showNameModal]);
+    }, []);
 
-    const handleModalShow = () => {
-      setTimeout(() => {
-        if (inputRef.current) {
-          inputRef.current.focus();
-        }
-      }, 300);
-    };
-
-    const handleTextChange = (text) => {
-      setTempFileName(text);
-      // Ensure keyboard stays open
-      if (!isKeyboardVisible && inputRef.current) {
+    useEffect(() => {
+      if (showNameModal && inputRef.current) {
         inputRef.current.focus();
       }
-    };
+    }, [showNameModal]);
 
     return (
       <Modal
@@ -856,116 +834,111 @@ const CertificatesScreen = ({ navigation }) => {
         animationType="fade"
         onRequestClose={handlePromptCancel}
         statusBarTranslucent
-        onShow={handleModalShow}
       >
         <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : null}
           style={{ flex: 1 }}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
-          enabled={true}
         >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={{ 
+            flex: 1, 
+            justifyContent: 'center', 
+            alignItems: 'center', 
+            backgroundColor: 'rgba(16,24,40,0.18)' 
+          }}>
             <View style={{ 
-              flex: 1, 
-              justifyContent: 'center', 
-              alignItems: 'center', 
-              backgroundColor: 'rgba(16,24,40,0.18)' 
+              backgroundColor: isDarkMode ? theme.surface : WHITE, 
+              borderRadius: 16, 
+              padding: 24, 
+              width: '90%',
+              maxWidth: 320,
+              shadowColor: '#000', 
+              shadowOpacity: 0.12, 
+              shadowRadius: 16, 
+              shadowOffset: { width: 0, height: 8 }, 
+              elevation: 8,
+              marginBottom: keyboardHeight > 0 ? keyboardHeight / 2 : 0,
+              transform: [{ translateY: keyboardHeight > 0 ? -keyboardHeight / 4 : 0 }]
             }}>
-              <View style={{ 
-                backgroundColor: isDarkMode ? '#1A2536' : WHITE, 
-                borderRadius: 16, 
-                padding: 24, 
-                width: 320,
-                shadowColor: '#000', 
-                shadowOpacity: 0.12, 
-                shadowRadius: 16, 
-                shadowOffset: { width: 0, height: 8 }, 
-                elevation: 8,
-                marginBottom: keyboardHeight > 0 ? keyboardHeight / 2 : 0,
-                transform: [{ translateY: keyboardHeight > 0 ? -keyboardHeight / 4 : 0 }]
+              <Text style={{ 
+                fontSize: 18, 
+                fontWeight: 'bold', 
+                color: isDarkMode ? theme.text : TEXT_DARK, 
+                marginBottom: 16 
               }}>
-                <Text style={{ 
-                  fontSize: 18, 
-                  fontWeight: 'bold', 
-                  color: isDarkMode ? '#FFFFFF' : TEXT_DARK, 
-                  marginBottom: 16 
-                }}>
-                  Name Certificate
-                </Text>
-                <TextInput
-                  ref={inputRef}
+                Name Certificate
+              </Text>
+              <TextInput
+                ref={inputRef}
+                style={{ 
+                  backgroundColor: isDarkMode ? theme.surface : BG_LIGHT, 
+                  borderRadius: 8, 
+                  padding: 12, 
+                  marginBottom: 20, 
+                  color: isDarkMode ? theme.text : TEXT_DARK, 
+                  borderWidth: 1, 
+                  borderColor: isDarkMode ? theme.border : '#E2E8F0', 
+                  fontSize: 16 
+                }}
+                placeholder="Enter certificate name"
+                placeholderTextColor={isDarkMode ? theme.textSecondary : TEXT_SECONDARY}
+                value={tempFileName}
+                onChangeText={setTempFileName}
+                autoFocus={true}
+                keyboardAppearance={isDarkMode ? 'dark' : 'light'}
+                onSubmitEditing={handlePromptSubmit}
+                returnKeyType="done"
+                blurOnSubmit={false}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="default"
+                textContentType="none"
+                maxLength={50}
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}>
+                <TouchableOpacity
                   style={{ 
-                    backgroundColor: isDarkMode ? '#232B3A' : BG_LIGHT, 
+                    flex: 1, 
+                    backgroundColor: isDarkMode ? theme.surface : RED, 
                     borderRadius: 8, 
-                    padding: 12, 
-                    marginBottom: 20, 
-                    color: isDarkMode ? '#FFFFFF' : TEXT_DARK, 
-                    borderWidth: 1, 
-                    borderColor: isDarkMode ? '#374151' : '#E2E8F0', 
-                    fontSize: 16 
+                    padding: 14, 
+                    alignItems: 'center' 
                   }}
-                  placeholder="Enter certificate name"
-                  placeholderTextColor={isDarkMode ? '#6B7280' : TEXT_SECONDARY}
-                  value={tempFileName}
-                  onChangeText={handleTextChange}
-                  autoFocus={true}
-                  keyboardAppearance={isDarkMode ? 'dark' : 'light'}
-                  onSubmitEditing={handlePromptSubmit}
-                  returnKeyType="done"
-                  blurOnSubmit={false}
-                  enablesReturnKeyAutomatically={true}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="default"
-                  textContentType="none"
-                  maxLength={50}
-                />
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}>
-                  <TouchableOpacity
-                    style={{ 
-                      flex: 1, 
-                      backgroundColor: isDarkMode ? '#374151' : RED, 
-                      borderRadius: 8, 
-                      padding: 14, 
-                      alignItems: 'center' 
-                    }}
-                    onPress={handlePromptCancel}
-                  >
-                    <Text style={{ 
-                      color: WHITE, 
-                      fontWeight: 'bold', 
-                      fontSize: 16 
-                    }}>
-                      Cancel
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={{ 
-                      flex: 1, 
-                      backgroundColor: isDarkMode ? '#19C6C1' : GREEN, 
-                      borderRadius: 8, 
-                      padding: 14, 
-                      alignItems: 'center' 
-                    }}
-                    onPress={handlePromptSubmit}
-                  >
-                    <Text style={{ 
-                      color: WHITE, 
-                      fontWeight: 'bold', 
-                      fontSize: 16 
-                    }}>
-                      Confirm
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                  onPress={handlePromptCancel}
+                >
+                  <Text style={{ 
+                    color: WHITE, 
+                    fontWeight: 'bold', 
+                    fontSize: 16 
+                  }}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ 
+                    flex: 1, 
+                    backgroundColor: isDarkMode ? TEAL : GREEN, 
+                    borderRadius: 8, 
+                    padding: 14, 
+                    alignItems: 'center' 
+                  }}
+                  onPress={handlePromptSubmit}
+                >
+                  <Text style={{ 
+                    color: WHITE, 
+                    fontWeight: 'bold', 
+                    fontSize: 16 
+                  }}>
+                    Confirm
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
-          </TouchableWithoutFeedback>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
     );
   };
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1, backgroundColor: isDarkMode ? theme.background : '#F8FAFC' }}>
@@ -974,7 +947,7 @@ const CertificatesScreen = ({ navigation }) => {
         {/* Header */}
         <View style={{
           paddingTop: Platform.OS === 'ios' ? 30 : 15,
-          paddingBottom: 0,
+          paddingBottom: 10,
           paddingHorizontal: 10,
           backgroundColor: isDarkMode ? (theme.background || '#101828') : '#fff'
         }}>
