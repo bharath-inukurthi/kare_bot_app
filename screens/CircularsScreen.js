@@ -32,8 +32,7 @@ const CircularsScreen = ({ navigation }) => {
   const [sortType, setSortType] = useState('date');
   const [sortOrder, setSortOrder] = useState('desc');
   const [showFullScreenLoading, setShowFullScreenLoading] = useState(true);
-  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
-  const [selectedCircular, setSelectedCircular] = useState(null);
+  // Removed: const [selectedCircular, setSelectedCircular] = useState(null);
 
   // Animation value for loading indicator
   const loadingOpacity = useRef(new Animated.Value(1)).current;
@@ -427,16 +426,7 @@ const CircularsScreen = ({ navigation }) => {
         </Text>
       </View>
       <View style={styles.tagContainer}>
-        <TouchableOpacity
-          onPress={() => handleDeleteCircular(item)}
-          style={styles.deleteButton}
-        >
-          <Ionicons 
-            name="trash-outline" 
-            size={20} 
-            color={isDarkMode ? '#EF4444' : '#EF4444'} 
-          />
-        </TouchableOpacity>
+       
         <Ionicons 
           name="chevron-forward" 
           size={16} 
@@ -489,11 +479,7 @@ const CircularsScreen = ({ navigation }) => {
     </View>
   );
 
-  const handleDeleteCircular = (circular) => {
-    setSelectedCircular(circular);
-    setDeleteModalVisible(true);
-  };
-
+ 
   const handleDeleteConfirm = async () => {
     if (!selectedCircular) return;
 
@@ -520,7 +506,7 @@ const CircularsScreen = ({ navigation }) => {
       console.error('Delete error:', error);
       showSnackbar('Failed to delete circular');
     } finally {
-      setDeleteModalVisible(false);
+      // setDeleteModalVisible(false); // Removed modal logic
       setSelectedCircular(null);
     }
   };
@@ -743,7 +729,8 @@ const CircularsScreen = ({ navigation }) => {
         </TouchableOpacity>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Confirmation Modal removed */}
+      {/*
       <Modal
         visible={deleteModalVisible}
         transparent={true}
@@ -772,7 +759,7 @@ const CircularsScreen = ({ navigation }) => {
             <View style={styles.modalButtons}>
               <Button
                 mode="outlined"
-                onPress={() => setDeleteModalVisible(false)}
+                // onPress={() => setDeleteModalVisible(false)}
                 style={[styles.modalButton, { borderColor: '#19C6C1' }]}
                 textColor="#19C6C1"
               >
@@ -790,6 +777,7 @@ const CircularsScreen = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+      */}
     </SafeAreaView>
   );
 };
@@ -932,7 +920,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 24,
     right: 24,
-    backgroundColor: '#2196F3',
+    backgroundColor: '#19C6C1',
     width: 48,
     height: 48,
     borderRadius: 24,
@@ -989,10 +977,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  deleteButton: {
-    padding: 8,
-    marginRight: 8,
-  },
+ 
 });
 
 export default CircularsScreen;

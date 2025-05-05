@@ -372,7 +372,8 @@ const CertificatesScreen = ({ navigation }) => {
                 savedToGallery = true;
               } catch (albumError) {
                 console.warn('Could not add asset to album:', albumError);
-                // The asset is still saved to the media library, just not in our album
+                // The asset is still saved to the media library, just not in our 
+                showSnackbar(`Certificate saved within the app as "${finalName}", but could not be saved to your device gallery.`, 'info');
                 savedToGallery = true;
               }
             } else {
@@ -415,10 +416,11 @@ const CertificatesScreen = ({ navigation }) => {
   // File Name Modal Component
  const FileNameModal = () => {
   const inputRef = useRef(null);
-  
+  const [localFileName, setLocalFileName] = useState(fileName);
+
   useEffect(() => {
     if (showNameModal) {
-      // Small delay to ensure modal is fully rendered
+      setLocalFileName(fileName);
       const timer = setTimeout(() => {
         if (inputRef.current) {
           inputRef.current.focus();
@@ -428,39 +430,50 @@ const CertificatesScreen = ({ navigation }) => {
     }
   }, [showNameModal]);
 
+  const handleModalClose = () => {
+    setShowNameModal(false);
+    setLocalFileName(fileName);
+    handleFileNameCancel();
+  };
 
-    const handleModalClose = () => {
-      setIsModalVisible(false);
-      setLocalFileName('');
-      handleFileNameCancel();
-    };
+  const handleTextChange = (text) => {
+    setLocalFileName(text);
+  };
 
-    const handleTextChange = (text) => {
-      setLocalFileName(text);
-      setFileName(text);
-    };
+  const handleSubmit = () => {
+    const trimmedName = localFileName.trim();
+    if (!trimmedName) {
+      showSnackbar('Please enter a valid file name', 'error');
+      return;
+    }
+    if (trimmedName === fileName.trim()) {
+      showSnackbar('Please enter a different file name', 'error');
+      return;
+    }
+    setFileName(trimmedName);
+    handleFileNameSubmit();
+  };
 
-    const handleSubmit = () => {
-      if (localFileName.trim()) {
-        setFileName(localFileName);
-        handleFileNameSubmit();
-      }
-    };
-
-    return (
-          <Modal
+  return (
+    <Modal
       visible={showNameModal}
       transparent={true}
       animationType="fade"
-      onRequestClose={handleFileNameCancel}
+      onRequestClose={handleModalClose}
       statusBarTranslucent
+      onShow={() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }}
     >
       <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+        enabled
       >
-        <TouchableWithoutFeedback onPress={handleFileNameCancel}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={{ 
             flex: 1, 
             justifyContent: 'center', 
@@ -502,8 +515,8 @@ const CertificatesScreen = ({ navigation }) => {
                   }}
                   placeholder="Enter certificate name"
                   placeholderTextColor={isDarkMode ? theme.textSecondary : TEXT_SECONDARY}
-                  value={fileName}
-                  onChangeText={setFileName}
+                  value={localFileName}
+                  onChangeText={handleTextChange}
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="default"
@@ -511,12 +524,12 @@ const CertificatesScreen = ({ navigation }) => {
                   maxLength={50}
                   blurOnSubmit={false}
                   returnKeyType="done"
-                  onSubmitEditing={handleFileNameSubmit}
+                  onSubmitEditing={handleSubmit}
                 />
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}>
                   <Button
                     mode="outlined"
-                    onPress={handleFileNameCancel}
+                    onPress={handleModalClose}
                     style={{ flex: 1 }}
                     textColor={RED}
                     buttonColor={isDarkMode ? theme.surface : WHITE}
@@ -525,7 +538,7 @@ const CertificatesScreen = ({ navigation }) => {
                   </Button>
                   <Button
                     mode="contained"
-                    onPress={handleFileNameSubmit}
+                    onPress={handleSubmit}
                     style={{ flex: 1 }}
                     buttonColor={isDarkMode ? TEAL : GREEN}
                   >
