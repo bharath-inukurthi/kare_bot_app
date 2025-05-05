@@ -17,7 +17,6 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   KeyboardAvoidingView,
-  Button,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -29,7 +28,7 @@ import ImageViewer from 'react-native-image-zoom-viewer';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { COLORS } from '../constants/Colors';
 import { useTheme } from '../context/ThemeContext';
-import { Snackbar } from 'react-native-paper';
+import { Button, Snackbar } from 'react-native-paper';
 
 const TEAL = '#19C6C1';
 const LIGHT_TEAL = '#E6F8F7';
@@ -88,12 +87,14 @@ const CertificatesScreen = ({ navigation }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showNameModal, setShowNameModal] = useState(false);
   const [fileName, setFileName] = useState('');
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [selectedCertificate, setSelectedCertificate] = useState(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [selectedImageUri, setSelectedImageUri] = useState(null);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [snackbarType, setSnackbarType] = useState('info'); // 'success', 'error', 'info'
+  const [localFileName, setLocalFileName] = useState('');
 
   // Constants
   const CERTIFICATES_DIRECTORY = FileSystem.documentDirectory + 'certificates/';
@@ -108,27 +109,6 @@ const CertificatesScreen = ({ navigation }) => {
   useEffect(() => {
     processAndSortCertificates();
   }, [searchQuery, sortType, sortOrder, rawCertificates]);
-
-  // Keyboard event listener
-  useEffect(() => {
-    const keyboardWillShow = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e) => {
-        setKeyboardHeight(e.endCoordinates.height);
-      }
-    );
-    const keyboardWillHide = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => {
-        setKeyboardHeight(0);
-      }
-    );
-
-    return () => {
-      keyboardWillShow.remove();
-      keyboardWillHide.remove();
-    };
-  }, []);
 
   // Directory setup
   const setupDirectories = async () => {
@@ -160,22 +140,63 @@ const CertificatesScreen = ({ navigation }) => {
   const loadCertificates = async () => {
     try {
       setLoading(true);
+      
+      // Load certificates from internal storage
       const files = await FileSystem.readDirectoryAsync(CERTIFICATES_DIRECTORY);
-      const certificatesData = await Promise.all(
+      const internalCertificates = await Promise.all(
         files.map(async (filename) => {
           const fileInfo = await FileSystem.getInfoAsync(CERTIFICATES_DIRECTORY + filename);
           return {
             filename,
             uri: CERTIFICATES_DIRECTORY + filename,
             date: new Date(fileInfo.modificationTime * 1000).toISOString().split('T')[0],
-            month: new Date(fileInfo.modificationTime * 1000).toLocaleString('default', { month: 'long' })
+            month: new Date(fileInfo.modificationTime * 1000).toLocaleString('default', { month: 'long' }),
+            source: 'internal'
           };
         })
       );
-      setRawCertificates(certificatesData);
+
+      // Load certificates from media library
+      let mediaCertificates = [];
+      const { status } = await MediaLibrary.getPermissionsAsync();
+      if (status === 'granted') {
+        try {
+          const albums = await MediaLibrary.getAlbumsAsync();
+          const targetAlbum = albums.find(album => album.title === FOLDER_NAME);
+          
+          if (targetAlbum) {
+            const assets = await MediaLibrary.getAssetsAsync({
+              album: targetAlbum.id,
+              mediaType: 'photo'
+            });
+            
+            mediaCertificates = assets.assets.map(asset => ({
+              filename: asset.filename,
+              uri: asset.uri,
+              date: new Date(asset.creationTime).toISOString().split('T')[0],
+              month: new Date(asset.creationTime).toLocaleString('default', { month: 'long' }),
+              source: 'media'
+            }));
+          }
+        } catch (mediaError) {
+          console.warn('Error loading media library certificates:', mediaError);
+        }
+      }
+
+      // Combine and deduplicate certificates
+      const allCertificates = [...internalCertificates, ...mediaCertificates];
+      const uniqueCertificates = allCertificates.reduce((acc, current) => {
+        const x = acc.find(item => item.filename === current.filename);
+        if (!x) {
+          return acc.concat([current]);
+        } else {
+          return acc;
+        }
+      }, []);
+
+      setRawCertificates(uniqueCertificates);
     } catch (error) {
       console.error('Load error:', error);
-      showSnackbar('Failed to load certificates');
     } finally {
       setLoading(false);
     }
@@ -296,15 +317,22 @@ const CertificatesScreen = ({ navigation }) => {
   const processSelectedImage = async (imageUri) => {
     try {
       setShowNameModal(true);
+      // Store the imageUri in state to use it later
+      setSelectedImageUri(imageUri);
     } catch (error) {
       console.error('Image processing error:', error);
       Alert.alert('Error', 'Failed to process image');
     }
   };
 
-  const handleFileNameSubmit = async (imageUri) => {
+  const handleFileNameSubmit = async () => {
     if (!fileName.trim()) {
-      showSnackbar('Please enter a valid file name');
+      showSnackbar('Please enter a valid file name', 'error');
+      return;
+    }
+
+    if (!selectedImageUri) {
+      showSnackbar('No image selected', 'error');
       return;
     }
 
@@ -318,7 +346,7 @@ const CertificatesScreen = ({ navigation }) => {
       
       // Copy the file to our app directory
       await FileSystem.copyAsync({
-        from: imageUri,
+        from: selectedImageUri,
         to: destinationUri,
       });
       
@@ -360,165 +388,158 @@ const CertificatesScreen = ({ navigation }) => {
       
       // Show appropriate success message
       if (savedToGallery) {
-        showSnackbar(`Certificate saved as "${finalName}"! It is also available in your device gallery.`);
+        showSnackbar(`Certificate saved as "${finalName}"! It is also available in your device gallery.`, 'success');
       } else {
-        showSnackbar(`Certificate saved within the app as "${finalName}", but could not be saved to your device gallery.`);
+        showSnackbar(`Certificate saved within the app as "${finalName}", but could not be saved to your device gallery.`, 'info');
       }
       
       // Refresh the certificates list
       await loadCertificates();
     } catch (error) {
       console.error('Image processing error:', error);
-      showSnackbar('Failed to save certificate');
+      showSnackbar('Failed to save certificate', 'error');
     } finally {
       setLoading(false);
       setFileName('');
+      setSelectedImageUri(null);
+      Keyboard.dismiss();
     }
   };
 
   const handleFileNameCancel = () => {
+    Keyboard.dismiss();
     setShowNameModal(false);
     setFileName('');
   };
 
   // File Name Modal Component
-  const FileNameModal = () => {
-    const inputRef = useRef(null);
-
-    useEffect(() => {
-      if (showNameModal && inputRef.current) {
-        const timer = setTimeout(() => {
+ const FileNameModal = () => {
+  const inputRef = useRef(null);
+  
+  useEffect(() => {
+    if (showNameModal) {
+      // Small delay to ensure modal is fully rendered
+      const timer = setTimeout(() => {
+        if (inputRef.current) {
           inputRef.current.focus();
-        }, 100);
-        return () => clearTimeout(timer);
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [showNameModal]);
+
+
+    const handleModalClose = () => {
+      setIsModalVisible(false);
+      setLocalFileName('');
+      handleFileNameCancel();
+    };
+
+    const handleTextChange = (text) => {
+      setLocalFileName(text);
+      setFileName(text);
+    };
+
+    const handleSubmit = () => {
+      if (localFileName.trim()) {
+        setFileName(localFileName);
+        handleFileNameSubmit();
       }
-    }, [showNameModal]);
+    };
 
     return (
-      <Modal
-        visible={showNameModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={handleFileNameCancel}
-        statusBarTranslucent
+          <Modal
+      visible={showNameModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={handleFileNameCancel}
+      statusBarTranslucent
+    >
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
       >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
-          enabled={keyboardHeight > 0}
-        >
+        <TouchableWithoutFeedback onPress={handleFileNameCancel}>
           <View style={{ 
             flex: 1, 
             justifyContent: 'center', 
-            alignItems: 'center', 
-            backgroundColor: 'rgba(16,24,40,0.18)',
-            paddingBottom: keyboardHeight
+            alignItems: 'center',
+            backgroundColor: 'rgba(16,24,40,0.18)'
           }}>
-            {/* Touchable background */}
-            <TouchableOpacity
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'transparent'
-              }}
-              activeOpacity={1}
-              onPress={handleFileNameCancel}
-            />
-            
-            {/* Modal content */}
-            <View style={{ 
-              backgroundColor: isDarkMode ? theme.surface : WHITE, 
-              borderRadius: 16, 
-              padding: 24, 
-              width: '90%',
-              maxWidth: 320,
-              shadowColor: '#000', 
-              shadowOpacity: 0.12, 
-              shadowRadius: 16, 
-              shadowOffset: { width: 0, height: 8 }, 
-              elevation: 8,
-              zIndex: 1
-            }}>
-              <Text style={{ 
-                fontSize: 18, 
-                fontWeight: 'bold', 
-                color: isDarkMode ? theme.text : TEXT_DARK, 
-                marginBottom: 16 
+            <TouchableWithoutFeedback onPress={e => e.stopPropagation()}>
+              <View style={{ 
+                backgroundColor: isDarkMode ? theme.surface : WHITE, 
+                borderRadius: 16,
+                padding: 24, 
+                width: '90%',
+                maxWidth: 320,
+                shadowColor: '#000', 
+                shadowOpacity: 0.12, 
+                shadowRadius: 16, 
+                shadowOffset: { width: 0, height: 8 }, 
+                elevation: 8
               }}>
-                Name Certificate
-              </Text>
-              <TextInput
-                ref={inputRef}
-                style={{ 
-                  backgroundColor: isDarkMode ? theme.surface : BG_LIGHT, 
-                  borderRadius: 8, 
-                  padding: 12, 
-                  marginBottom: 20, 
+                <Text style={{ 
+                  fontSize: 18, 
+                  fontWeight: 'bold', 
                   color: isDarkMode ? theme.text : TEXT_DARK, 
-                  borderWidth: 1, 
-                  borderColor: isDarkMode ? theme.border : '#E2E8F0', 
-                  fontSize: 16 
-                }}
-                placeholder="Enter certificate name"
-                placeholderTextColor={isDarkMode ? theme.textSecondary : TEXT_SECONDARY}
-                value={fileName}
-                onChangeText={setFileName}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="default"
-                textContentType="none"
-                maxLength={50}
-                returnKeyType="done"
-                onSubmitEditing={() => handleFileNameSubmit()}
-              />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}>
-                <TouchableOpacity
+                  marginBottom: 16 
+                }}>
+                  Name Certificate
+                </Text>
+                <TextInput
+                  ref={inputRef}
                   style={{ 
-                    flex: 1, 
-                    backgroundColor: isDarkMode ? theme.surface : RED, 
+                    backgroundColor: isDarkMode ? '#232B3A' : BG_LIGHT, 
                     borderRadius: 8, 
-                    padding: 14, 
-                    alignItems: 'center' 
-                  }}
-                  onPress={handleFileNameCancel}
-                >
-                  <Text style={{ 
-                    color: WHITE, 
-                    fontWeight: 'bold', 
+                    padding: 12, 
+                    marginBottom: 20, 
+                    color: isDarkMode ? theme.text : TEXT_DARK, 
+                    borderWidth: 1, 
+                    borderColor: isDarkMode ? theme.border : '#E2E8F0', 
                     fontSize: 16 
-                  }}>
+                  }}
+                  placeholder="Enter certificate name"
+                  placeholderTextColor={isDarkMode ? theme.textSecondary : TEXT_SECONDARY}
+                  value={fileName}
+                  onChangeText={setFileName}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="default"
+                  textContentType="none"
+                  maxLength={50}
+                  blurOnSubmit={false}
+                  returnKeyType="done"
+                  onSubmitEditing={handleFileNameSubmit}
+                />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}>
+                  <Button
+                    mode="outlined"
+                    onPress={handleFileNameCancel}
+                    style={{ flex: 1 }}
+                    textColor={RED}
+                    buttonColor={isDarkMode ? theme.surface : WHITE}
+                  >
                     Cancel
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ 
-                    flex: 1, 
-                    backgroundColor: isDarkMode ? TEAL : GREEN, 
-                    borderRadius: 8, 
-                    padding: 14, 
-                    alignItems: 'center' 
-                  }}
-                  onPress={() => handleFileNameSubmit()}
-                >
-                  <Text style={{ 
-                    color: WHITE, 
-                    fontWeight: 'bold', 
-                    fontSize: 16 
-                  }}>
+                  </Button>
+                  <Button
+                    mode="contained"
+                    onPress={handleFileNameSubmit}
+                    style={{ flex: 1 }}
+                    buttonColor={isDarkMode ? TEAL : GREEN}
+                  >
                     Confirm
-                  </Text>
-                </TouchableOpacity>
+                  </Button>
+                </View>
               </View>
-            </View>
+            </TouchableWithoutFeedback>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
-    );
-  };
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+};
 
   // Get or create album for certificates with improved error handling
   const getOrCreateAlbum = async () => {
@@ -585,72 +606,60 @@ const CertificatesScreen = ({ navigation }) => {
     }
   };
 
-  // Sharing functionality
-  const shareCertificate = async (uri) => {
+  // Handle certificate sharing
+  const handleShareCertificate = async () => {
+    if (!selectedCertificate) return;
+
     try {
       if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert('Error', 'Sharing is not available on this device');
         return;
       }
       
-      await Sharing.shareAsync(uri, {
+      await Sharing.shareAsync(selectedCertificate.uri, {
         mimeType: 'image/jpeg',
         dialogTitle: 'Share Certificate',
         UTI: 'public.image'
       });
     } catch (error) {
       console.error('Share error:', error);
-      Alert.alert('Error', 'Failed to share certificate');
+    } finally {
+      setShowOptionsModal(false);
+      setSelectedCertificate(null);
     }
   };
 
-  // Certificate deletion with improved error handling
-  const deleteCertificate = async (uri) => {
+  // Handle certificate deletion
+  const handleDeleteCertificate = async () => {
+    if (!selectedCertificate) return;
+    setShowOptionsModal(false);
+    setDeleteModalVisible(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedCertificate) return;
+
     try {
-      const filename = uri.split('/').pop();
+      setLoading(true);
+      // Delete from app's internal storage
+      await FileSystem.deleteAsync(selectedCertificate.uri);
       
-      Alert.alert(
-        'Confirm Deletion',
-        `Are you sure you want to delete "${filename}"?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Delete', 
-            style: 'destructive',
-            onPress: async () => {
-              setLoading(true);
-              try {
-                // 1. Delete from app's internal storage first
-                await FileSystem.deleteAsync(uri);
-                console.log(`Deleted internal file: ${uri}`);
-                
-                // 2. Try to delete from media library if possible
-                const { status } = await MediaLibrary.getPermissionsAsync();
-                if (status === 'granted') {
-                  // Attempt to find and delete the matching asset in the media library
-                  try {
-                    await deleteFromMediaLibrary(filename);
-                  } catch (mediaError) {
-                    console.log('Media library deletion error:', mediaError);
-                    // Don't block the flow - we've already deleted from internal storage
-                  }
-                }
-                
-                Alert.alert('Success', 'Certificate deleted successfully');
-                loadCertificates();
-              } catch (deleteError) {
-                console.error('Deletion error:', deleteError);
-                Alert.alert('Error', 'Failed to delete certificate');
-              } finally {
-                setLoading(false);
-              }
-            }
-          }
-        ]
-      );
+      // Try to delete from media library if possible
+      const { status } = await MediaLibrary.getPermissionsAsync();
+      if (status === 'granted') {
+        try {
+          await deleteFromMediaLibrary(selectedCertificate.filename);
+        } catch (mediaError) {
+          console.log('Media library deletion error:', mediaError);
+        }
+      }
+      
+      await loadCertificates();
     } catch (error) {
-      console.error('Delete request error:', error);
-      Alert.alert('Error', 'Failed to process deletion request');
+      console.error('Deletion error:', error);
+    } finally {
+      setLoading(false);
+      setDeleteModalVisible(false);
+      setSelectedCertificate(null);
     }
   };
 
@@ -723,113 +732,6 @@ const CertificatesScreen = ({ navigation }) => {
     setSelectedCertificate(item);
     setShowOptionsModal(true);
   };
-
-  // Handle certificate deletion
-  const handleDeleteCertificate = async () => {
-    if (!selectedCertificate) return;
-    setDeleteModalVisible(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!selectedCertificate) return;
-
-    try {
-      setLoading(true);
-      // Delete from app's internal storage
-      await FileSystem.deleteAsync(selectedCertificate.uri);
-      
-      // Try to delete from media library if possible
-      const { status } = await MediaLibrary.getPermissionsAsync();
-      if (status === 'granted') {
-        try {
-          await deleteFromMediaLibrary(selectedCertificate.filename);
-        } catch (mediaError) {
-          console.log('Media library deletion error:', mediaError);
-        }
-      }
-      
-      showSnackbar('Certificate deleted successfully');
-      await loadCertificates();
-    } catch (error) {
-      console.error('Deletion error:', error);
-      showSnackbar('Failed to delete certificate');
-    } finally {
-      setLoading(false);
-      setDeleteModalVisible(false);
-      setShowOptionsModal(false);
-      setSelectedCertificate(null);
-    }
-  };
-
-  // Handle certificate sharing
-  const handleShareCertificate = async () => {
-    if (!selectedCertificate) return;
-
-    try {
-      if (!(await Sharing.isAvailableAsync())) {
-        showSnackbar('Sharing is not available on this device');
-        return;
-      }
-      
-      await Sharing.shareAsync(selectedCertificate.uri, {
-        mimeType: 'image/jpeg',
-        dialogTitle: 'Share Certificate',
-        UTI: 'public.image'
-      });
-    } catch (error) {
-      console.error('Share error:', error);
-      showSnackbar('Failed to share certificate');
-    }
-  };
-
-  // Options Modal Component
-  const OptionsModal = () => (
-    <Modal
-      visible={showOptionsModal}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => setShowOptionsModal(false)}
-    >
-      <TouchableOpacity
-        style={styles.modalOverlay}
-        activeOpacity={1}
-        onPress={() => setShowOptionsModal(false)}
-      >
-        <View style={[
-          styles.optionsModalContent,
-          { backgroundColor: isDarkMode ? theme.surface : WHITE }
-        ]}>
-          <TouchableOpacity
-            style={styles.optionButton}
-            onPress={handleShareCertificate}
-          >
-            <Ionicons name="share-outline" size={24} color={isDarkMode ? theme.text : TEXT_DARK} />
-            <Text style={[styles.optionText, { color: isDarkMode ? theme.text : TEXT_DARK }]}>
-              Share
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.optionButton, styles.deleteButton]}
-            onPress={handleDeleteCertificate}
-          >
-            <Ionicons name="trash-outline" size={24} color={RED} />
-            <Text style={[styles.optionText, { color: RED }]}>
-              Delete
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.optionButton}
-            onPress={() => setShowOptionsModal(false)}
-          >
-            <Ionicons name="close-outline" size={24} color={isDarkMode ? theme.text : TEXT_DARK} />
-            <Text style={[styles.optionText, { color: isDarkMode ? theme.text : TEXT_DARK }]}>
-              Cancel
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-    </Modal>
-  );
 
   // Update the renderItem function
   const renderItem = ({ item }) => (
@@ -1004,10 +906,60 @@ const CertificatesScreen = ({ navigation }) => {
     </Modal>
   );
 
-  const showSnackbar = (message) => {
+  const showSnackbar = (message, type = 'info') => {
     setSnackbarMessage(message);
+    setSnackbarType(type);
     setSnackbarVisible(true);
   };
+
+  // Options Modal Component
+  const OptionsModal = () => (
+    <Modal
+      visible={showOptionsModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowOptionsModal(false)}
+    >
+      <TouchableOpacity
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={() => setShowOptionsModal(false)}
+      >
+        <View style={[
+          styles.optionsModalContent,
+          { backgroundColor: isDarkMode ? theme.surface : WHITE }
+        ]}>
+          <TouchableOpacity
+            style={styles.optionButton}
+            onPress={handleShareCertificate}
+          >
+            <Ionicons name="share-outline" size={24} color={isDarkMode ? theme.text : TEXT_DARK} />
+            <Text style={[styles.optionText, { color: isDarkMode ? theme.text : TEXT_DARK }]}>
+              Share
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optionButton, styles.deleteButton]}
+            onPress={handleDeleteCertificate}
+          >
+            <Ionicons name="trash-outline" size={24} color={RED} />
+            <Text style={[styles.optionText, { color: RED }]}>
+              Delete
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.optionButton}
+            onPress={() => setShowOptionsModal(false)}
+          >
+            <Ionicons name="close-outline" size={24} color={isDarkMode ? theme.text : TEXT_DARK} />
+            <Text style={[styles.optionText, { color: isDarkMode ? theme.text : TEXT_DARK }]}>
+              Cancel
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -1233,22 +1185,6 @@ const CertificatesScreen = ({ navigation }) => {
           </View>
         </Modal>
 
-        <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={3000}
-        style={[
-          styles.snackbar,
-          { backgroundColor: isDarkMode ? '#1F2937' : '#1A1A1A' }
-        ]}
-        action={{
-          label: 'Dismiss',
-          onPress: () => setSnackbarVisible(false),
-        }}
-      >
-        {snackbarMessage}
-      </Snackbar>
-
         {/* Delete Confirmation Modal */}
         <Modal
           visible={deleteModalVisible}
@@ -1281,18 +1217,52 @@ const CertificatesScreen = ({ navigation }) => {
                   onPress={() => setDeleteModalVisible(false)}
                   style={[styles.modalButton, { borderColor: '#19C6C1' }]}
                   labelStyle={{ color: '#19C6C1' }}
-                  title="Cancel"
-                />
+                >
+                  Cancel
+                </Button>
                 <Button
                   mode="contained"
                   onPress={handleDeleteConfirm}
                   style={[styles.modalButton, { backgroundColor: '#EF4444' }]}
-                  title="Delete"
-                />
+                >
+                  Delete
+                </Button>
               </View>
             </View>
           </View>
         </Modal>
+
+        <Snackbar
+          visible={snackbarVisible}
+          onDismiss={() => setSnackbarVisible(false)}
+          duration={5000}
+          style={{
+            backgroundColor: snackbarType === 'error' 
+              ? isDarkMode ? '#EF4444' : '#FEE2E2'
+              : snackbarType === 'success'
+                ? isDarkMode ? '#22C55E' : '#DCFCE7'
+                : isDarkMode ? theme.surface : WHITE
+          }}
+          action={{
+            label: 'Dismiss',
+            onPress: () => setSnackbarVisible(false),
+            textColor: snackbarType === 'error' 
+              ? isDarkMode ? '#FEE2E2' : '#EF4444'
+              : snackbarType === 'success'
+                ? isDarkMode ? '#DCFCE7' : '#22C55E'
+                : isDarkMode ? theme.text : TEXT_DARK
+          }}
+        >
+          <Text style={{ 
+            color: snackbarType === 'error' 
+              ? isDarkMode ? '#FEE2E2' : '#EF4444'
+              : snackbarType === 'success'
+                ? isDarkMode ? '#DCFCE7' : '#22C55E'
+                : isDarkMode ? theme.text : TEXT_DARK
+          }}>
+            {snackbarMessage}
+          </Text>
+        </Snackbar>
       </SafeAreaView>
     </GestureHandlerRootView>
   );
