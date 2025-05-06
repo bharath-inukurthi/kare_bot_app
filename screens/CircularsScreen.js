@@ -10,17 +10,361 @@ import {
   StatusBar,
   SectionList,
   Animated,
-  FlatList,
   SafeAreaView,
-  Modal,
+  PanResponder,
+  Linking, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Linking, Alert } from 'react-native';
-import { COLORS } from '../constants/Colors';
 import { fetch } from 'expo/fetch';
 import { useTheme } from '../context/ThemeContext';
-import { Button } from 'react-native-paper';
+
+// Indexed ScrollBar Component
+const IndexedScrollBar = ({ sections, onIndexPress, sortType, isDarkMode, sectionListRef }) => {
+  const getIndices = () => {
+    if (sortType === 'date') {
+      return sections.map(section => {
+        const [month, year] = section.title.split(' ');
+        const shortYear = year ? year.slice(-2) : '';
+        return {
+          label: `${month ? month.substring(0, 3).toUpperCase() : ''}\n'${shortYear}`,
+          value: section.title
+        };
+      });
+    } else {
+      return sections.map(section => ({
+        label: section.title ? section.title[0].toUpperCase() : '',
+        value: section.title
+      }));
+    }
+  };
+
+  const [activeIndex, setActiveIndex] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const indices = getIndices();
+  const itemHeight = sortType === 'date' ? 32 : 20;
+  const POP_DISTANCE = -35;
+
+  // Use individual animation refs for better tracking
+  const scaleAnims = useRef(indices.map(() => new Animated.Value(1))).current;
+  const translateXAnims = useRef(indices.map(() => new Animated.Value(0))).current;
+
+  const containerRef = useRef(null);
+  const scrollbarMeasurements = useRef({
+    y: 0,
+    height: 0,
+    measured: false
+  });
+
+  // Track if component is mounted
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  // Reset animations when sections change
+  useEffect(() => {
+    // Create new animation values if length changed
+    if (scaleAnims.length !== indices.length) {
+      scaleAnims.length = 0;
+      translateXAnims.length = 0;
+
+      indices.forEach((_, i) => {
+        scaleAnims[i] = new Animated.Value(1);
+        translateXAnims[i] = new Animated.Value(0);
+      });
+    }
+
+    resetAllAnimations();
+
+    // Force measure on next render
+    if (containerRef.current) {
+      setTimeout(() => {
+        if (isMounted.current && containerRef.current) {
+          measureScrollbar();
+        }
+      }, 300);
+    }
+  }, [sections, sortType]);
+
+  // Measure scrollbar whenever it's layout changes
+  const measureScrollbar = () => {
+    if (containerRef.current) {
+      try {
+        containerRef.current.measure((_, __, ___, height, ____, pageY) => {
+          if (isMounted.current) {
+            scrollbarMeasurements.current = {
+              y: pageY,
+              height: height,
+              measured: true
+            };
+          }
+        });
+      } catch (error) {
+        console.warn('Error measuring scrollbar:', error);
+      }
+    }
+  };
+
+  // Helper function to animate an index
+  const animateIndex = useCallback((index, isActive, isDraggingNow = false) => {
+    if (index < 0 || index >= indices.length || !isMounted.current) return;
+
+    const scale = isActive ? (isDraggingNow ? 1.4 : 1.2) : 1;
+    const translateX = isActive ? (isDraggingNow ? POP_DISTANCE : POP_DISTANCE / 2) : 0;
+
+    Animated.parallel([
+      Animated.spring(scaleAnims[index], {
+        toValue: scale,
+        friction: 5,
+        tension: 120,
+        useNativeDriver: true
+      }),
+      Animated.spring(translateXAnims[index], {
+        toValue: translateX,
+        friction: 5,
+        tension: 120,
+        useNativeDriver: true
+      })
+    ]).start();
+  }, [indices.length, scaleAnims, translateXAnims]);
+
+  // Reset all animations to default state
+  const resetAllAnimations = useCallback(() => {
+    if (!isMounted.current) return;
+
+    indices.forEach((_, i) => {
+      animateIndex(i, false);
+    });
+    setActiveIndex(null);
+    setIsDragging(false);
+  }, [indices, animateIndex]);
+
+  // Handle index activation
+  const activateIndex = useCallback((index, i, isDraggingNow = false) => {
+    if (!index || !index.value || !isMounted.current) return;
+
+    // Reset previous active index if different
+    if (activeIndex !== null && activeIndex !== i) {
+      animateIndex(activeIndex, false);
+    }
+
+    setActiveIndex(i);
+    onIndexPress(index.value);
+    animateIndex(i, true, isDraggingNow);
+  }, [onIndexPress, animateIndex, activeIndex]);
+
+  // Handle press on an index
+  const handleIndexPress = useCallback((index, i) => {
+    activateIndex(index, i, true);
+
+    // Auto-reset animation after a delay
+    setTimeout(() => {
+      if (isMounted.current && i === activeIndex) {
+        animateIndex(i, true, false);
+      }
+    }, 500);
+
+    // Reset all animations after longer delay
+    setTimeout(() => {
+      if (isMounted.current) {
+        resetAllAnimations();
+      }
+    }, 2000);
+  }, [activateIndex, activeIndex, animateIndex, resetAllAnimations]);
+
+  // Measure container position and size
+  const handleLayout = useCallback(() => {
+    // Use setTimeout to ensure the component is fully rendered
+    setTimeout(measureScrollbar, 100);
+  }, []);
+
+  // Calculate index from Y position
+  const getIndexFromY = useCallback((y) => {
+    const { y: scrollbarY, height: scrollbarHeight, measured } = scrollbarMeasurements.current;
+
+    if (!measured) return 0;
+
+    const relativeY = y - scrollbarY;
+    const totalHeight = indices.length * itemHeight;
+    const normalizedY = (relativeY / scrollbarHeight) * totalHeight;
+    return Math.max(0, Math.min(indices.length - 1, Math.floor(normalizedY / itemHeight)));
+  }, [indices.length, itemHeight]);
+
+  // Create pan responder for dragging interaction
+  const panResponder = React.useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+
+    onPanResponderGrant: (_, gestureState) => {
+      setIsDragging(true);
+      // Measure again to ensure accurate positioning
+      measureScrollbar();
+
+      // Small delay to ensure measurement is complete
+      setTimeout(() => {
+        if (isMounted.current) {
+          const idx = getIndexFromY(gestureState.y0);
+          if (indices[idx] && indices[idx].value) {
+            activateIndex(indices[idx], idx, true);
+          }
+        }
+      }, 10);
+    },
+
+    onPanResponderMove: (_, gestureState) => {
+      const currentIdx = getIndexFromY(gestureState.moveY);
+      if (currentIdx !== activeIndex && indices[currentIdx] && indices[currentIdx].value) {
+        activateIndex(indices[currentIdx], currentIdx, true);
+      }
+    },
+
+    onPanResponderRelease: () => {
+      setIsDragging(false);
+      if (activeIndex !== null) {
+        animateIndex(activeIndex, true, false);
+        setTimeout(() => {
+          if (isMounted.current) {
+            resetAllAnimations();
+          }
+        }, 2000);
+      }
+    },
+
+    onPanResponderTerminate: () => {
+      setIsDragging(false);
+      resetAllAnimations();
+    }
+  }), [indices, activeIndex, getIndexFromY, activateIndex, animateIndex, resetAllAnimations]);
+
+  // Calculate dynamic top offset for centering
+  const totalHeight = indices.length * itemHeight;
+  const translateY = -(totalHeight / 2);
+
+  // Listen to scroll events to update active index
+  useEffect(() => {
+    if (!sectionListRef?.current || sections.length === 0) return;
+
+    const handleScroll = (info) => {
+      if (isDragging || !info.viewableItems || info.viewableItems.length === 0) return;
+
+      // Get the first visible section
+      const firstVisibleSection = info.viewableItems[0].section;
+      if (!firstVisibleSection) return;
+
+      // Find the index of this section in our indices
+      const sectionIndex = indices.findIndex(idx => idx.value === firstVisibleSection.title);
+      if (sectionIndex !== -1 && sectionIndex !== activeIndex) {
+        // Just update the active index without scrolling (to avoid loops)
+        setActiveIndex(sectionIndex);
+        animateIndex(sectionIndex, true, false);
+
+        // Reset after a delay
+        setTimeout(() => {
+          if (isMounted.current) {
+            resetAllAnimations();
+          }
+        }, 2000);
+      }
+    };
+
+    // Set up the viewability config
+    const viewabilityConfig = {
+      itemVisiblePercentThreshold: 50,
+      minimumViewTime: 300,
+    };
+
+    // Create the viewability config list
+    const viewabilityConfigCallbackPairs = [{
+      viewabilityConfig,
+      onViewableItemsChanged: handleScroll
+    }];
+
+    // Set the viewability config on the SectionList
+    if (sectionListRef.current) {
+      sectionListRef.current.viewabilityConfigCallbackPairs = viewabilityConfigCallbackPairs;
+    }
+
+  }, [sections, indices, activeIndex, isDragging, animateIndex, resetAllAnimations, sectionListRef]);
+
+  return (
+    <Animated.View
+      ref={containerRef}
+      style={[
+        styles.indexedScrollBar,
+        isDarkMode && styles.indexedScrollBarDark,
+        {
+          position: 'absolute',
+          right: 8,
+          top: sortType === 'date' ? '35%' : '45%',
+          transform: [{ translateY }],
+          opacity: 0.9,
+          zIndex: 20,
+        }
+      ]}
+      onLayout={handleLayout}
+      {...panResponder.panHandlers}
+    >
+      <View style={styles.indexList}>
+        {indices.map((index, i) => (
+          <Animated.View
+            key={i}
+            style={{
+              transform: [
+                { scale: scaleAnims[i] || new Animated.Value(1) },
+                { translateX: translateXAnims[i] || new Animated.Value(0) }
+              ],
+              marginVertical: sortType === 'date' ? 1 : 0,
+              borderRadius: 10,
+              backgroundColor: 'transparent',
+              shadowColor: activeIndex === i ? '#000' : 'transparent',
+              shadowOpacity: activeIndex === i ? 0.2 : 0,
+              shadowRadius: activeIndex === i ? 4 : 0,
+              elevation: activeIndex === i ? 4 : 0,
+              minWidth: sortType === 'date' ? 32 : 24,
+              minHeight: itemHeight,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <TouchableOpacity
+              style={[
+                styles.indexItem,
+                isDarkMode && styles.indexItemDark,
+                activeIndex === i && styles.indexItemActive,
+                {
+                  minWidth: sortType === 'date' ? 32 : 24,
+                  minHeight: itemHeight,
+                  backgroundColor: activeIndex === i ? (isDarkMode ? '#19C6C1' : '#0F172A') : 'transparent',
+                },
+              ]}
+              onPress={() => handleIndexPress(index, i)}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.indexText,
+                isDarkMode && styles.indexTextDark,
+                {
+                  fontSize: 9,
+                  fontWeight: 'bold',
+                  letterSpacing: 2,
+                  textAlign: 'center',
+                  lineHeight: sortType === 'date' ? 14 : 11
+                },
+                activeIndex === i && { color: isDarkMode ? '#fff' : '#fff' }
+              ]}>
+                {index.label}
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
+        ))}
+      </View>
+    </Animated.View>
+  );
+};
 
 const CircularsScreen = ({ navigation }) => {
   const [circulars, setCirculars] = useState([]);
@@ -48,24 +392,24 @@ const CircularsScreen = ({ navigation }) => {
   // Helper function to parse date string in "month_name-year-day" format
   const parseDateString = (dateString) => {
     if (!dateString) return null;
-    
+
     const parts = dateString.split('-');
     if (parts.length !== 3) return null;
-    
+
     const monthName = parts[0];
     const year = parseInt(parts[1]);
     const day = parseInt(parts[2]);
-    
+
     const monthMap = {
       'January': 0, 'February': 1, 'March': 2, 'April': 3,
       'May': 4, 'June': 5, 'July': 6, 'August': 7,
       'September': 8, 'October': 9, 'November': 10, 'December': 11
     };
-    
+
     if (isNaN(year) || isNaN(day) || monthMap[monthName] === undefined) {
       return null;
     }
-    
+
     return new Date(year, monthMap[monthName], day);
   };
 
@@ -123,19 +467,19 @@ const CircularsScreen = ({ navigation }) => {
     if (sortType === 'date') {
       // Use the pre-sorted data from dataByGroupRef
       let groupedData = { ...dataByGroupRef.current };
-      
+
       // If empty (first render or after filter change), rebuild the groups
       if (Object.keys(groupedData).length === 0) {
         filteredData.forEach(item => {
           if (!item.date) return;
-  
+
           const month = getMonthFromDateString(item.date);
           const year = getYearFromDateString(item.date);
-          
+
           if (!month || !year) return;
-          
+
           const key = `${year} ${month}`;
-  
+
           if (!groupedData[key]) {
             groupedData[key] = {
               title: `${month} ${year}`,
@@ -144,7 +488,7 @@ const CircularsScreen = ({ navigation }) => {
               data: []
             };
           }
-  
+
           // Add to the group (it will be sorted later)
           groupedData[key].data.push(item);
         });
@@ -155,12 +499,12 @@ const CircularsScreen = ({ navigation }) => {
         group.data.sort((a, b) => {
           const dateA = parseDateString(a.date);
           const dateB = parseDateString(b.date);
-          
+
           // Handle null dates
           if (!dateA && !dateB) return 0;
           if (!dateA) return 1;
           if (!dateB) return -1;
-          
+
           return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
         });
       });
@@ -231,18 +575,18 @@ const CircularsScreen = ({ navigation }) => {
     setOriginalData([]);
     receivedCount.current = 0;
     dataByGroupRef.current = {}; // Reset grouped data
-  
+
     loadingOpacity.setValue(1);
-  
+
     if (fetchControllerRef.current) {
       fetchControllerRef.current.abort();
     }
-  
+
     const controller = new AbortController();
     fetchControllerRef.current = controller;
-    
+
     const apiUrl = `https://faculty-availability-api.onrender.com/stream-circulars?t=${Date.now()}`;
-  
+
     try {
       const response = await fetch(apiUrl, {
         headers: {
@@ -252,18 +596,18 @@ const CircularsScreen = ({ navigation }) => {
         },
         signal: controller.signal
       });
-  
+
       if (!response.ok || !response.body) {
         throw new Error(`HTTP error: ${response.status}`);
       }
-  
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
-  
+
       while (true) {
         const { done, value } = await reader.read();
-  
+
         if (done) {
           // Stream has finished - mark loading as complete
           if (isMounted.current) {
@@ -273,10 +617,10 @@ const CircularsScreen = ({ navigation }) => {
           }
           break;
         }
-  
+
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
-  
+
         for (let i = 0; i < lines.length - 1; i++) {
           const line = lines[i].trim();
           if (line.startsWith('data:')) {
@@ -289,7 +633,7 @@ const CircularsScreen = ({ navigation }) => {
             }
           }
         }
-  
+
         buffer = lines[lines.length - 1];
       }
     } catch (err) {
@@ -298,7 +642,7 @@ const CircularsScreen = ({ navigation }) => {
         setLoading(false);
         setInitialLoading(false);
         setShowFullScreenLoading(false);
-  
+
         if (receivedCount.current === 0) {
           Alert.alert('Fetch Failed', `${err.message}`, [
             { text: 'Cancel', style: 'cancel' },
@@ -308,11 +652,11 @@ const CircularsScreen = ({ navigation }) => {
       }
     }
   };
-  
+
   const handleNewItem = (data) => {
     // Increment received count
     receivedCount.current += 1;
-    
+
     // Ensure all required fields exist with defaults if missing
     const processedData = {
       filename: data.filename || 'Unnamed Document',
@@ -329,9 +673,9 @@ const CircularsScreen = ({ navigation }) => {
     if (processedData.date) {
       const month = getMonthFromDateString(processedData.date);
       const year = getYearFromDateString(processedData.date);
-      
+
       if (!month || !year) return;
-      
+
       const key = `${year} ${month}`;
 
       // Add to or create the month-year group
@@ -346,24 +690,24 @@ const CircularsScreen = ({ navigation }) => {
       } else {
         // Add to existing group and sort within that group
         const currentData = [...groupedData[key].data, processedData];
-        
+
         // Sort by date inside the group
         currentData.sort((a, b) => {
           const dateA = parseDateString(a.date);
           const dateB = parseDateString(b.date);
-          
+
           // Handle null dates
           if (!dateA && !dateB) return 0;
           if (!dateA) return 1;
           if (!dateB) return -1;
-          
+
           // Always sort newest first within the group - actual display order will be handled by sortOrder
           return dateB - dateA;
         });
-        
+
         groupedData[key].data = currentData;
       }
-      
+
       dataByGroupRef.current = groupedData;
     }
 
@@ -385,11 +729,8 @@ const CircularsScreen = ({ navigation }) => {
     }
   };
 
-  const toggleSortType = () => setSortType(prev => prev === 'date' ? 'name' : 'date');
-  const toggleSortOrder = () => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-
   const renderSectionHeader = ({ section }) => (
-    <Text 
+    <Text
       style={[
         styles.monthHeader,
         isDarkMode && styles.monthHeaderDark
@@ -400,23 +741,30 @@ const CircularsScreen = ({ navigation }) => {
   );
 
   const renderItem = ({ item }) => (
-    <TouchableOpacity 
+    <TouchableOpacity
       style={[
         styles.circularItem,
         isDarkMode && styles.circularItemDark
       ]}
+      onPress={() => {
+        if (item.url) {
+          Linking.openURL(item.url).catch(() => {
+            Alert.alert('Failed to open link');
+          });
+        }
+      }}
     >
       <View style={styles.circularContent}>
-        <Text 
+        <Text
           style={[
             styles.circularTitle,
             isDarkMode && styles.circularTitleDark
-          ]} 
+          ]}
           numberOfLines={1}
         >
           {item.filename}
         </Text>
-        <Text 
+        <Text
           style={[
             styles.circularDate,
             isDarkMode && styles.circularDateDark
@@ -426,90 +774,75 @@ const CircularsScreen = ({ navigation }) => {
         </Text>
       </View>
       <View style={styles.tagContainer}>
-       
-        <Ionicons 
-          name="chevron-forward" 
-          size={16} 
-          color={isDarkMode ? '#4A4A4A' : '#DEDEDE'} 
+
+        <Ionicons
+          name="chevron-forward"
+          size={16}
+          color={isDarkMode ? '#4A4A4A' : '#DEDEDE'}
         />
       </View>
     </TouchableOpacity>
   );
 
-  const getStatusStyle = (status) => {
-    switch(status) {
-      case 'Exam':
-        return styles.statusExam;
-      case 'Academic':
-        return styles.statusAcademic;
-      case 'Event':
-        return styles.statusEvent;
-      case 'Research':
-        return styles.statusResearch;
-      case 'Notice':
-        return styles.statusNotice;
-      default:
-        return styles.statusGeneral;
+
+
+  const scrollToSection = useCallback((sectionTitle) => {
+    const sectionIndex = circulars.findIndex(section => section.title === sectionTitle);
+    if (sectionIndex !== -1) {
+      sectionListRef.current?.scrollToLocation({
+        sectionIndex,
+        itemIndex: 0,
+        viewOffset: 0,
+        animated: true
+      });
     }
+  }, [circulars]);
+
+  // Add getItemLayout function
+  const getItemLayout = (_, index) => {
+    const itemHeight = 60; // Height of each circular item
+    const headerHeight = 40; // Height of section header
+    let offset = 0;
+
+    // Calculate offset by summing up heights of previous sections
+    for (let i = 0; i < index; i++) {
+      const section = circulars[i];
+      if (section) {
+        offset += headerHeight + (section.data.length * itemHeight);
+      }
+    }
+
+    return {
+      length: itemHeight,
+      offset,
+      index
+    };
   };
 
-  const getStatusTextStyle = (status) => {
-    switch(status) {
-      case 'Exam':
-        return styles.statusExamText;
-      case 'Academic':
-        return styles.statusAcademicText;
-      case 'Event':
-        return styles.statusEventText;
-      case 'Research':
-        return styles.statusResearchText;
-      case 'Notice':
-        return styles.statusNoticeText;
-      default:
-        return styles.statusGeneralText;
-    }
+  // Add onScrollToIndexFailed handler
+  const handleScrollToIndexFailed = (info) => {
+    const wait = new Promise(resolve => setTimeout(resolve, 500));
+    wait.then(() => {
+      sectionListRef.current?.scrollToLocation({
+        sectionIndex: info.index,
+        itemIndex: 0,
+        viewOffset: 0,
+        animated: true
+      });
+    });
   };
+
+  // Reference for SectionList
+  const sectionListRef = useRef(null);
 
   const renderEmptyList = () => (
     <View style={styles.emptyContainer}>
-      <Ionicons name="document-text-outline" size={60} color={COLORS.grey} />
+      <Ionicons name="document-text-outline" size={60} color="#64748B" />
       <Text style={styles.emptyText}>
         {searchQuery ? "No matching circulars" : "No circulars available"}
       </Text>
     </View>
   );
-
- 
-  const handleDeleteConfirm = async () => {
-    if (!selectedCircular) return;
-
-    try {
-      // Remove the circular from originalData
-      setOriginalData(prevData => 
-        prevData.filter(item => item.filename !== selectedCircular.filename)
-      );
-
-      // Update the grouped data
-      const month = getMonthFromDateString(selectedCircular.date);
-      const year = getYearFromDateString(selectedCircular.date);
-      if (month && year) {
-        const key = `${year} ${month}`;
-        if (dataByGroupRef.current[key]) {
-          dataByGroupRef.current[key].data = dataByGroupRef.current[key].data.filter(
-            item => item.filename !== selectedCircular.filename
-          );
-        }
-      }
-
-      showSnackbar('Circular deleted successfully');
-    } catch (error) {
-      console.error('Delete error:', error);
-      showSnackbar('Failed to delete circular');
-    } finally {
-      // setDeleteModalVisible(false); // Removed modal logic
-      setSelectedCircular(null);
-    }
-  };
 
   return (
     <SafeAreaView style={[
@@ -517,7 +850,7 @@ const CircularsScreen = ({ navigation }) => {
       isDarkMode && styles.containerDark
     ]}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      
+
       <View style={{
           paddingTop: Platform.OS === 'ios' ? 30 : 15,
           paddingBottom: 12,
@@ -593,10 +926,10 @@ const CircularsScreen = ({ navigation }) => {
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons 
-                name="close-circle" 
-                size={20} 
-                color={isDarkMode ? '#A0AEC0' : '#64748B'} 
+              <Ionicons
+                name="close-circle"
+                size={20}
+                color={isDarkMode ? '#A0AEC0' : '#64748B'}
               />
             </TouchableOpacity>
           )}
@@ -661,21 +994,36 @@ const CircularsScreen = ({ navigation }) => {
         </View>
       </View>
 
-      <SectionList
-        sections={circulars}
-        renderItem={renderItem}
-        renderSectionHeader={renderSectionHeader}
-        keyExtractor={(item, index) => item.url || `circular-${index}`}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={!loading ? renderEmptyList : null}
-        stickySectionHeadersEnabled={false}
-      />
+      <View style={{ flex: 1 }}>
+        <SectionList
+          ref={sectionListRef}
+          sections={circulars}
+          renderItem={renderItem}
+          renderSectionHeader={renderSectionHeader}
+          keyExtractor={(item, index) => item.url || `circular-${index}`}
+          contentContainerStyle={[styles.listContainer, { paddingBottom: 80 }]}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={!loading ? renderEmptyList : null}
+          stickySectionHeadersEnabled={false}
+          getItemLayout={getItemLayout}
+          onScrollToIndexFailed={handleScrollToIndexFailed}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+        />
+        <IndexedScrollBar
+          sections={circulars}
+          onIndexPress={scrollToSection}
+          sortType={sortType}
+          isDarkMode={isDarkMode}
+          sectionListRef={sectionListRef}
+        />
+      </View>
 
       {showFullScreenLoading && (
         <Animated.View style={[
           styles.loadingOverlay,
-          { 
+          {
             opacity: loadingOpacity,
             backgroundColor: isDarkMode ? 'rgba(16, 24, 40, 0.9)' : 'rgba(255, 255, 255, 0.9)'
           }
@@ -729,60 +1077,12 @@ const CircularsScreen = ({ navigation }) => {
         </TouchableOpacity>
       )}
 
-      {/* Delete Confirmation Modal removed */}
-      {/*
-      <Modal
-        visible={deleteModalVisible}
-        transparent={true}
-        onRequestClose={() => setDeleteModalVisible(false)}
-      >
-        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
-          <View style={[
-            styles.modalContent,
-            { 
-              backgroundColor: isDarkMode ? theme.surface : '#fff',
-              borderColor: isDarkMode ? theme.border : '#E2E8F0'
-            }
-          ]}>
-            <Text style={[
-              styles.modalTitle,
-              { color: isDarkMode ? theme.text : '#0F172A' }
-            ]}>
-              Delete Circular
-            </Text>
-            <Text style={[
-              styles.modalMessage,
-              { color: isDarkMode ? theme.textSecondary : '#64748B' }
-            ]}>
-              Are you sure you want to delete this circular?
-            </Text>
-            <View style={styles.modalButtons}>
-              <Button
-                mode="outlined"
-                // onPress={() => setDeleteModalVisible(false)}
-                style={[styles.modalButton, { borderColor: '#19C6C1' }]}
-                textColor="#19C6C1"
-              >
-                Cancel
-              </Button>
-              <Button
-                mode="contained"
-                onPress={handleDeleteConfirm}
-                style={[styles.modalButton, { backgroundColor: '#EF4444' }]}
-                textColor="#FFFFFF"
-              >
-                Delete
-              </Button>
-            </View>
-          </View>
-        </View>
-      </Modal>
-      */}
+
     </SafeAreaView>
   );
 };
 
-const SortButton = ({ label, active, onPress, style, isDarkMode, theme }) => (
+const SortButton = ({ label, active, onPress, style, isDarkMode }) => (
   <TouchableOpacity
     onPress={onPress}
     style={[
@@ -812,6 +1112,55 @@ const SortButton = ({ label, active, onPress, style, isDarkMode, theme }) => (
 );
 
 const styles = StyleSheet.create({
+  indexedScrollBar: {
+    position: 'absolute',
+    right: 8,
+    top: '40%',
+    transform: [{ translateY: -100 }],
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 10,
+    padding: 2,
+    zIndex: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 200,
+  },
+  indexedScrollBarDark: {
+    backgroundColor: '#1E293B',
+  },
+  indexList: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    paddingVertical: 0,
+  },
+  indexItem: {
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  indexItemActive: {
+    transform: [{ scale: 1.3 }],
+    shadowColor: '#19C6C1',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  indexItemDark: {
+    backgroundColor: '#2D3748',
+  },
+  indexText: {
+    fontSize: 9,
+    color: '#fff',
+    fontWeight: 'bold',
+    letterSpacing: 1,
+    textAlign: 'center',
+  },
+  indexTextDark: {
+    color: '#E2E8F0',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
@@ -855,7 +1204,7 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 12,
   },
-  
+
   circularTitle: {
     fontSize: 15,
     fontWeight: '400',
@@ -919,7 +1268,7 @@ const styles = StyleSheet.create({
   refreshButton: {
     position: 'absolute',
     bottom: 24,
-    right: 24,
+    left: 24, // Moved to left side to avoid overlap with scroll bar
     backgroundColor: '#19C6C1',
     width: 48,
     height: 48,
@@ -931,6 +1280,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
+    zIndex: 10, // Lower than scroll bar to avoid overlap
   },
   emptyContainer: {
     alignItems: 'center',
@@ -977,7 +1327,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
- 
+
 });
 
 export default CircularsScreen;

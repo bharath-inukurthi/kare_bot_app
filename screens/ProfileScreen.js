@@ -23,6 +23,7 @@ import { Linking } from 'react-native';
 import { fetchAndCacheTimeTable } from './UserDetailsScreen.js';
 import { useTheme } from '../context/ThemeContext';
 import { FontAwesome5, MaterialCommunityIcons, Ionicons, Feather } from '@expo/vector-icons';
+import { Dialog, Portal, Button } from 'react-native-paper';
 // Define the color scheme consistent with the app
 const COLORS = {
   primary: '#00b3b3', // Teal for header and highlights
@@ -92,6 +93,7 @@ const ProfileScreen = () => {
   const [semester, setSemester] = React.useState('');
   // Add loading state
   const [isLoading, setIsLoading] = React.useState(false);
+  const [showFeedbackDialog, setShowFeedbackDialog] = React.useState(false);
 
   // Generate section options from S01 to S30
   const SECTION_OPTIONS = Array.from({length: 30}, (_, i) => `S${String(i + 1).padStart(2, '0')}`);
@@ -217,16 +219,14 @@ useEffect(() => {
     }
   };
 
-  // Handle sending feedback (mock)
+  // Update handleSendFeedback to use Dialog
   const handleSendFeedback = () => {
-    Alert.alert(
-      'Send Feedback',
-      'Your feedback helps us improve KARE Bot! Send us your thoughts.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Open Email', onPress: () => Linking.openURL('mailto:bharathinukurthi1@gmail.com')  }
-      ]
-    );
+    setShowFeedbackDialog(true);
+  };
+
+  const handleOpenEmail = () => {
+    setShowFeedbackDialog(false);
+    Linking.openURL('mailto:bharathkare276@gmail.com');
   };
 
   // Mock data for profile options
@@ -752,6 +752,39 @@ useEffect(() => {
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
+      
+      <Portal>
+        <Dialog
+          visible={showFeedbackDialog}
+          onDismiss={() => setShowFeedbackDialog(false)}
+          style={{
+            backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight,
+          }}
+        >
+          <Dialog.Title style={{ color: isDarkMode ? COLORS.primaryLight : COLORS.primary }}>
+            Send Feedback
+          </Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: isDarkMode ? COLORS.secondary : COLORS.text }}>
+              Your feedback helps us improve KARE Bot! Send us your thoughts.
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              onPress={() => setShowFeedbackDialog(false)}
+              textColor={isDarkMode ? COLORS.primaryLight : COLORS.primary}
+            >
+              Cancel
+            </Button>
+            <Button
+              onPress={handleOpenEmail}
+              textColor={isDarkMode ? COLORS.primaryLight : COLORS.primary}
+            >
+              Open Email
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </>
   );
 }

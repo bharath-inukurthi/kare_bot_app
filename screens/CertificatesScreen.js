@@ -325,82 +325,79 @@ const CertificatesScreen = ({ navigation }) => {
     }
   };
 
-  const handleFileNameSubmit = async () => {
-    if (!fileName.trim()) {
+  const handleFileNameSubmit = async (name) => {
+    if (!name || !name.trim()) {
       showSnackbar('Please enter a valid file name', 'error');
-      return;
+      return false;
+    }
+
+    // Check if a file with the same name already exists
+    const finalName = name.trim().endsWith('.jpg') ? name.trim() : `${name.trim()}.jpg`;
+    const destinationUri = CERTIFICATES_DIRECTORY + finalName;
+    const fileExists = await FileSystem.getInfoAsync(destinationUri);
+    
+    if (fileExists.exists) {
+      showSnackbar('A certificate with this name already exists. Please choose a different name.', 'error');
+      return false;
     }
 
     if (!selectedImageUri) {
       showSnackbar('No image selected', 'error');
-      return;
+      return false;
     }
 
     try {
       setLoading(true);
-      setShowNameModal(false);
+      
+      // Check for permissions before proceeding
+      const hasPermission = await ensureMediaLibraryPermissions();
+      if (!hasPermission) {
+        showSnackbar('Storage permission is required to save certificates. Please grant permission and try again.', 'error');
+        setLoading(false);
+        return false;
+      }
       
       // Create destination path for internal storage
-      const finalName = fileName.trim().endsWith('.jpg') ? fileName.trim() : `${fileName.trim()}.jpg`;
       const destinationUri = CERTIFICATES_DIRECTORY + finalName;
       
-      // Copy the file to our app directory
+      // Copy the file to our app directory and save to gallery
       await FileSystem.copyAsync({
         from: selectedImageUri,
         to: destinationUri,
       });
       
-      // Save to external storage if permissions granted
-      const hasPermission = await ensureMediaLibraryPermissions();
-
-      // First consider the operation successful after internal save
-      let savedToGallery = false;
-
-      if (hasPermission) {
-        try {
-          // Save to media library with a more robust approach
-          const asset = await MediaLibrary.createAssetAsync(destinationUri);
-          
-          if (asset) {
-            // Try to get or create the album
-            const album = await getOrCreateAlbum();
-            
-            if (album) {
-              // Add the asset to the album with error handling
-              try {
-                await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-                savedToGallery = true;
-              } catch (albumError) {
-                console.warn('Could not add asset to album:', albumError);
-                // The asset is still saved to the media library, just not in our 
-                showSnackbar(`Certificate saved within the app as "${finalName}", but could not be saved to your device gallery.`, 'info');
-                savedToGallery = true;
-              }
-            } else {
-              // Album creation/fetching failed, but asset is still in the media library
-              savedToGallery = true;
-            }
+      // Save to media library
+      try {
+        const asset = await MediaLibrary.createAssetAsync(destinationUri);
+        if (asset) {
+          const album = await getOrCreateAlbum();
+          if (album) {
+            await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+            showSnackbar(`Certificate saved as "${finalName}"! It is available in your device gallery.`, 'success');
           }
-        } catch (externalSaveError) {
-          console.error('External save error:', externalSaveError);
-          // Continue with the flow, we'll show appropriate messages
         }
-      }
-      
-      // Show appropriate success message
-      if (savedToGallery) {
-        showSnackbar(`Certificate saved as "${finalName}"! It is also available in your device gallery.`, 'success');
-      } else {
-        showSnackbar(`Certificate saved within the app as "${finalName}", but could not be saved to your device gallery.`, 'info');
+      } catch (error) {
+        console.error('Failed to save to gallery:', error);
+        // Delete the internal copy since gallery save failed
+        try {
+          await FileSystem.deleteAsync(destinationUri);
+        } catch (deleteError) {
+          console.error('Failed to cleanup internal file:', deleteError);
+        }
+        showSnackbar('Failed to save certificate. Please try again.', 'error');
+        return false;
       }
       
       // Refresh the certificates list
       await loadCertificates();
+      return true;
     } catch (error) {
       console.error('Image processing error:', error);
       showSnackbar('Failed to save certificate', 'error');
+      return false;
     } finally {
       setLoading(false);
+      setShowNameModal(false);
       setFileName('');
       setSelectedImageUri(null);
       Keyboard.dismiss();
@@ -416,11 +413,13 @@ const CertificatesScreen = ({ navigation }) => {
   // File Name Modal Component
  const FileNameModal = () => {
   const inputRef = useRef(null);
-  const [localFileName, setLocalFileName] = useState(fileName);
+  const [localFileName, setLocalFileName] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (showNameModal) {
-      setLocalFileName(fileName);
+      setLocalFileName("");
+      setError("");
       const timer = setTimeout(() => {
         if (inputRef.current) {
           inputRef.current.focus();
@@ -431,27 +430,31 @@ const CertificatesScreen = ({ navigation }) => {
   }, [showNameModal]);
 
   const handleModalClose = () => {
-    setShowNameModal(false);
-    setLocalFileName(fileName);
-    handleFileNameCancel();
+    if (!loading) {
+      setShowNameModal(false);
+      setLocalFileName("");
+      setError("");
+      handleFileNameCancel();
+    }
   };
 
-  const handleTextChange = (text) => {
+  const handleInputChange = (text) => {
     setLocalFileName(text);
+    if (text.trim()) {
+      setError("");
+    }
   };
 
-  const handleSubmit = () => {
-    const trimmedName = localFileName.trim();
-    if (!trimmedName) {
-      showSnackbar('Please enter a valid file name', 'error');
+  const handleSubmit = async () => {
+    if (!localFileName.trim()) {
+      setError("Please enter a valid file name");
       return;
     }
-    if (trimmedName === fileName.trim()) {
-      showSnackbar('Please enter a different file name', 'error');
-      return;
+    const success = await handleFileNameSubmit(localFileName);
+    if (success) {
+      setLocalFileName("");
+      setError("");
     }
-    setFileName(trimmedName);
-    handleFileNameSubmit();
   };
 
   return (
@@ -516,7 +519,7 @@ const CertificatesScreen = ({ navigation }) => {
                   placeholder="Enter certificate name"
                   placeholderTextColor={isDarkMode ? theme.textSecondary : TEXT_SECONDARY}
                   value={localFileName}
-                  onChangeText={handleTextChange}
+                  onChangeText={handleInputChange}
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="default"
@@ -923,6 +926,10 @@ const CertificatesScreen = ({ navigation }) => {
     setSnackbarMessage(message);
     setSnackbarType(type);
     setSnackbarVisible(true);
+  };
+
+  const onDismissSnackbar = () => {
+    setSnackbarVisible(false);
   };
 
   // Options Modal Component
