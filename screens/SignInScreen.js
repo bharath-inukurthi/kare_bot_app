@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,8 +9,8 @@ import {
   Alert,
   TouchableOpacity,
   TextInput,
+  Animated,
 } from 'react-native';
-import { getAuth, signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
 import { LinearGradient } from 'expo-linear-gradient';
 
 // Define the color scheme consistent with the app
@@ -32,22 +32,77 @@ const SignInScreen = ({
   debugMode,
   setDebugMode,
 }) => {
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const imageScale = useRef(new Animated.Value(0.8)).current;
+
+  useEffect(() => {
+    // Start animations when component mounts
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.spring(imageScale, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.bg}>
-        {/* Main Image */}
-        <View style={styles.imageContainer}>
+        {/* Main Image with animation */}
+        <Animated.View
+          style={[
+            styles.imageContainer,
+            {
+              opacity: fadeAnim,
+              transform: [
+                { scale: imageScale },
+                { translateY: slideAnim }
+              ]
+            }
+          ]}
+        >
           <Image
             source={require('../assets/login page.png')}
             style={styles.mainImage}
             resizeMode="cover"
           />
-        </View>
-        {/* Title and Subtitle */}
-        <Text style={styles.title}>KARE Bot</Text>
-        <Text style={styles.subtitle}>Your Campus Companion</Text>
-        {/* Google Sign-In Button */}
-        <View style={styles.signInContainer}>
+        </Animated.View>
+
+        {/* Title and Subtitle with animation */}
+        <Animated.View
+          style={{
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }]
+          }}
+        >
+          <Text style={styles.title}>KARE Bot</Text>
+          <Text style={styles.subtitle}>Your Campus Companion</Text>
+        </Animated.View>
+
+        {/* Google Sign-In Button with animation */}
+        <Animated.View
+          style={[
+            styles.signInContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
           <TouchableOpacity
             style={styles.googleButton}
             onPress={handleGoogleSignIn}
@@ -55,18 +110,27 @@ const SignInScreen = ({
             activeOpacity={0.85}
           >
             <Image
-  source={require('../assets/google-logo.png')}
-  style={styles.googleIcon}
-/>
+              source={require('../assets/google.png')}
+              style={styles.googleIcon}
+            />
             <Text style={styles.googleButtonText}>
               {isLoading ? 'Signing in...' : 'Sign in with Google'}
             </Text>
           </TouchableOpacity>
-        </View>
-        {/* Debug tools - only shown in development mode */}
+        </Animated.View>
+
+        {/* Debug tools with animation */}
         {__DEV__ && (
-          <View style={styles.debugContainer}>
-            <TouchableOpacity 
+          <Animated.View
+            style={[
+              styles.debugContainer,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <TouchableOpacity
               style={styles.debugButton}
               onPress={createTestUser}
               disabled={isLoading}
@@ -75,7 +139,7 @@ const SignInScreen = ({
                 {isLoading ? 'Processing...' : 'Create Test User'}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.debugButton}
               onPress={() => setDebugMode(!debugMode)}
             >
@@ -83,7 +147,7 @@ const SignInScreen = ({
                 {debugMode ? 'Disable Debug Mode' : 'Enable Debug Mode'}
               </Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         )}
       </View>
     </SafeAreaView>

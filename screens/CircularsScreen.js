@@ -153,12 +153,29 @@ const IndexedScrollBar = ({ sections, onIndexPress, sortType, isDarkMode, sectio
     }
 
     setActiveIndex(i);
-    onIndexPress(index.value);
+
+    // Add a small delay before triggering the scroll to ensure animations are processed first
+    setTimeout(() => {
+      if (isMounted.current) {
+        console.log(`Activating index ${i} with value ${index.value}`);
+        onIndexPress(index.value);
+      }
+    }, 10);
+
     animateIndex(i, true, isDraggingNow);
   }, [onIndexPress, animateIndex, activeIndex]);
 
   // Handle press on an index
   const handleIndexPress = useCallback((index, i) => {
+    console.log(`Index pressed: ${i}, value: ${index.value}`);
+
+    // Ensure the index is valid
+    if (!index || !index.value) {
+      console.warn('Invalid index pressed');
+      return;
+    }
+
+    // Activate the index with a visual indication
     activateIndex(index, i, true);
 
     // Auto-reset animation after a delay
@@ -244,6 +261,9 @@ const IndexedScrollBar = ({ sections, onIndexPress, sortType, isDarkMode, sectio
   const totalHeight = indices.length * itemHeight;
   const translateY = -(totalHeight / 2);
 
+  // Create ref for viewability config outside of useEffect
+  const viewabilityConfigCallbackPairsRef = useRef([]);
+
   // Listen to scroll events to update active index
   useEffect(() => {
     if (!sectionListRef?.current || sections.length === 0) return;
@@ -252,12 +272,16 @@ const IndexedScrollBar = ({ sections, onIndexPress, sortType, isDarkMode, sectio
       if (isDragging || !info.viewableItems || info.viewableItems.length === 0) return;
 
       // Get the first visible section
-      const firstVisibleSection = info.viewableItems[0].section;
+      const firstVisibleSection = info.viewableItems.find(item => item.section)?.section;
       if (!firstVisibleSection) return;
+
+      console.log('Visible section:', firstVisibleSection.title);
 
       // Find the index of this section in our indices
       const sectionIndex = indices.findIndex(idx => idx.value === firstVisibleSection.title);
       if (sectionIndex !== -1 && sectionIndex !== activeIndex) {
+        console.log(`Updating active index to ${sectionIndex} for section ${firstVisibleSection.title}`);
+
         // Just update the active index without scrolling (to avoid loops)
         setActiveIndex(sectionIndex);
         animateIndex(sectionIndex, true, false);
@@ -273,21 +297,35 @@ const IndexedScrollBar = ({ sections, onIndexPress, sortType, isDarkMode, sectio
 
     // Set up the viewability config
     const viewabilityConfig = {
-      itemVisiblePercentThreshold: 50,
-      minimumViewTime: 300,
+      itemVisiblePercentThreshold: 30,
+      minimumViewTime: 100,
     };
 
     // Create the viewability config list
-    const viewabilityConfigCallbackPairs = [{
+    viewabilityConfigCallbackPairsRef.current = [{
       viewabilityConfig,
       onViewableItemsChanged: handleScroll
     }];
 
     // Set the viewability config on the SectionList
     if (sectionListRef.current) {
-      sectionListRef.current.viewabilityConfigCallbackPairs = viewabilityConfigCallbackPairs;
+      // Use a timeout to ensure the SectionList is fully initialized
+      setTimeout(() => {
+        if (sectionListRef.current && isMounted.current) {
+          try {
+            sectionListRef.current.viewabilityConfigCallbackPairs = viewabilityConfigCallbackPairsRef.current;
+            console.log('Set up viewability config on SectionList');
+          } catch (error) {
+            console.error('Error setting viewability config:', error);
+          }
+        }
+      }, 100);
     }
 
+    return () => {
+      // Clean up
+      viewabilityConfigCallbackPairsRef.current = [];
+    };
   }, [sections, indices, activeIndex, isDragging, animateIndex, resetAllAnimations, sectionListRef]);
 
   return (
@@ -442,7 +480,10 @@ const CircularsScreen = ({ navigation }) => {
 
   // Memoize the processAndSortCirculars function to prevent unnecessary executions
   const processAndSortCirculars = useCallback((data) => {
+    console.log(`Processing ${data?.length || 0} items, search: "${searchQuery}", sort: ${sortType}, order: ${sortOrder}`);
+
     if (!data || !Array.isArray(data) || data.length === 0) {
+      console.log('No data to process, setting empty circulars');
       setCirculars([]);
       return;
     }
@@ -454,6 +495,7 @@ const CircularsScreen = ({ navigation }) => {
         item.filename?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.date?.toLowerCase().includes(searchQuery.toLowerCase())
       );
+      console.log(`Filtered to ${filteredData.length} items matching "${searchQuery}"`);
     }
 
     // Define month order for proper sorting
@@ -463,20 +505,28 @@ const CircularsScreen = ({ navigation }) => {
       'September': 9, 'October': 10, 'November': 11, 'December': 12
     };
 
-    // Group and sort data
-    if (sortType === 'date') {
-      // Use the pre-sorted data from dataByGroupRef
-      let groupedData = { ...dataByGroupRef.current };
+    try {
+      // Group and sort data
+      if (sortType === 'date') {
+        console.log('Processing by date');
 
-      // If empty (first render or after filter change), rebuild the groups
-      if (Object.keys(groupedData).length === 0) {
-        filteredData.forEach(item => {
-          if (!item.date) return;
+        // Always rebuild the groups to ensure all data is included
+        let groupedData = {};
+
+        // Process each item and add to appropriate group
+        filteredData.forEach((item, index) => {
+          if (!item.date) {
+            console.log(`Item ${index} has no date:`, item.filename);
+            return;
+          }
 
           const month = getMonthFromDateString(item.date);
           const year = getYearFromDateString(item.date);
 
-          if (!month || !year) return;
+          if (!month || !year) {
+            console.log(`Item ${index} has invalid date format:`, item.date);
+            return;
+          }
 
           const key = `${year} ${month}`;
 
@@ -489,83 +539,124 @@ const CircularsScreen = ({ navigation }) => {
             };
           }
 
-          // Add to the group (it will be sorted later)
+          // Add to the group
           groupedData[key].data.push(item);
         });
-      }
 
-      // Sort items within each month group
-      Object.values(groupedData).forEach(group => {
-        group.data.sort((a, b) => {
-          const dateA = parseDateString(a.date);
-          const dateB = parseDateString(b.date);
+        console.log(`Created ${Object.keys(groupedData).length} date groups`);
 
-          // Handle null dates
-          if (!dateA && !dateB) return 0;
-          if (!dateA) return 1;
-          if (!dateB) return -1;
+        // Sort items within each month group
+        Object.values(groupedData).forEach(group => {
+          group.data.sort((a, b) => {
+            const dateA = parseDateString(a.date);
+            const dateB = parseDateString(b.date);
 
-          return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+            // Handle null dates
+            if (!dateA && !dateB) return 0;
+            if (!dateA) return 1;
+            if (!dateB) return -1;
+
+            return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+          });
         });
-      });
 
-      // Convert to array and sort by year first, then by month
-      const result = Object.values(groupedData);
-      result.sort((a, b) => {
-        // First sort by year
-        if (a.year !== b.year) {
-          return sortOrder === 'desc' ? b.year - a.year : a.year - b.year;
-        }
-        // Then by month
-        return sortOrder === 'desc'
-          ? monthOrder[b.month] - monthOrder[a.month]
-          : monthOrder[a.month] - monthOrder[b.month];
-      });
+        // Convert to array and sort by year first, then by month
+        const result = Object.values(groupedData);
+        result.sort((a, b) => {
+          // First sort by year
+          if (a.year !== b.year) {
+            return sortOrder === 'desc' ? b.year - a.year : a.year - b.year;
+          }
+          // Then by month
+          return sortOrder === 'desc'
+            ? monthOrder[b.month] - monthOrder[a.month]
+            : monthOrder[a.month] - monthOrder[b.month];
+        });
 
-      setCirculars(result);
-    } else {
-      // Sort and group by name
-      const sortedData = [...filteredData].sort((a, b) => {
-        const nameA = a.filename?.toLowerCase() || '';
-        const nameB = b.filename?.toLowerCase() || '';
-        return sortOrder === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
-      });
+        console.log(`Setting ${result.length} date sections with total ${filteredData.length} items`);
+        setCirculars(result);
+      } else {
+        console.log('Processing by name');
 
-      // Group by first letter
-      const grouped = {};
-      sortedData.forEach(item => {
-        if (!item.filename) return;
-        const letter = item.filename[0].toUpperCase();
-        if (!grouped[letter]) {
-          grouped[letter] = {
-            title: letter,
-            data: []
-          };
-        }
-        grouped[letter].data.push(item);
-      });
+        // Sort and group by name
+        const sortedData = [...filteredData].sort((a, b) => {
+          const nameA = a.filename?.toLowerCase() || '';
+          const nameB = b.filename?.toLowerCase() || '';
+          return sortOrder === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+        });
 
-      // Convert to array and sort alphabetically
-      const result = Object.values(grouped);
-      result.sort((a, b) => {
-        return sortOrder === 'asc'
-          ? a.title.localeCompare(b.title)
-          : b.title.localeCompare(a.title);
-      });
+        // Group by first letter
+        const grouped = {};
+        sortedData.forEach((item, index) => {
+          if (!item.filename) {
+            console.log(`Item ${index} has no filename`);
+            return;
+          }
 
-      setCirculars(result);
+          const letter = item.filename[0].toUpperCase();
+          if (!grouped[letter]) {
+            grouped[letter] = {
+              title: letter,
+              data: []
+            };
+          }
+
+          grouped[letter].data.push(item);
+        });
+
+        // Convert to array and sort alphabetically
+        const result = Object.values(grouped);
+        result.sort((a, b) => {
+          return sortOrder === 'asc'
+            ? a.title.localeCompare(b.title)
+            : b.title.localeCompare(a.title);
+        });
+
+        console.log(`Setting ${result.length} alphabet sections with total ${filteredData.length} items`);
+        setCirculars(result);
+      }
+    } catch (error) {
+      console.error('Error processing circulars:', error);
+      // Fallback to empty array in case of error
+      setCirculars([]);
     }
   }, [searchQuery, sortType, sortOrder]);
 
   // Run processing whenever dependencies change
   useEffect(() => {
+    console.log(`Processing data: ${originalData.length} items`);
     processAndSortCirculars(originalData);
   }, [originalData, searchQuery, sortType, sortOrder, processAndSortCirculars]);
+
+  // Log circulars data for debugging
+  useEffect(() => {
+    console.log(`Circulars updated: ${circulars.length} sections`);
+    circulars.forEach((section, i) => {
+      console.log(`Section ${i}: ${section.title} - ${section.data.length} items`);
+    });
+  }, [circulars]);
 
   // Reset grouped data when sort type or order changes
   useEffect(() => {
     dataByGroupRef.current = {};
-  }, [sortType, sortOrder, searchQuery]);
+    // Also reset the section layout cache
+    sectionLayoutCache.current = {};
+
+    // Reset scroll position after a short delay to allow re-rendering
+    setTimeout(() => {
+      if (sectionListRef.current && circulars.length > 0) {
+        try {
+          sectionListRef.current.scrollToLocation({
+            sectionIndex: 0,
+            itemIndex: 0,
+            animated: false
+          });
+        } catch (error) {
+          console.error('Error resetting scroll position:', error);
+        }
+      }
+    }, 300);
+  }, [sortType, sortOrder, searchQuery, circulars.length]);
 
   const fetchCirculars = async () => {
     setLoading(true);
@@ -654,78 +745,61 @@ const CircularsScreen = ({ navigation }) => {
   };
 
   const handleNewItem = (data) => {
-    // Increment received count
-    receivedCount.current += 1;
+    try {
+      // Increment received count
+      receivedCount.current += 1;
 
-    // Ensure all required fields exist with defaults if missing
-    const processedData = {
-      filename: data.filename || 'Unnamed Document',
-      url: data.url || '',
-      date: data.date || 'Unknown Date',
-      ...data // Keep any other fields
-    };
-
-    // Add to original data
-    setOriginalData(prev => [...prev, processedData]);
-    setLoadingProgress(prev => prev + 1);
-
-    // Insert into organized data structure for date sorting
-    if (processedData.date) {
-      const month = getMonthFromDateString(processedData.date);
-      const year = getYearFromDateString(processedData.date);
-
-      if (!month || !year) return;
-
-      const key = `${year} ${month}`;
-
-      // Add to or create the month-year group
-      const groupedData = { ...dataByGroupRef.current };
-      if (!groupedData[key]) {
-        groupedData[key] = {
-          title: `${month} ${year}`,
-          month: month,
-          year: year,
-          data: [processedData]
-        };
-      } else {
-        // Add to existing group and sort within that group
-        const currentData = [...groupedData[key].data, processedData];
-
-        // Sort by date inside the group
-        currentData.sort((a, b) => {
-          const dateA = parseDateString(a.date);
-          const dateB = parseDateString(b.date);
-
-          // Handle null dates
-          if (!dateA && !dateB) return 0;
-          if (!dateA) return 1;
-          if (!dateB) return -1;
-
-          // Always sort newest first within the group - actual display order will be handled by sortOrder
-          return dateB - dateA;
-        });
-
-        groupedData[key].data = currentData;
+      // Log every 10th item for debugging
+      if (receivedCount.current % 10 === 0) {
+        console.log(`Received ${receivedCount.current} items so far`);
       }
 
-      dataByGroupRef.current = groupedData;
-    }
+      // Ensure all required fields exist with defaults if missing
+      const processedData = {
+        filename: data.filename || 'Unnamed Document',
+        url: data.url || '',
+        date: data.date || 'Unknown Date',
+        id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`, // Add unique ID
+        ...data // Keep any other fields
+      };
 
-    // After receiving first data, remove initial loading overlay
-    if (initialLoading && receivedCount.current >= 1) {
-      setInitialLoading(false);
-    }
-
-    // After receiving 5 items, transition from full-screen loading to side indicator
-    if (showFullScreenLoading && receivedCount.current >= 5) {
-      // Animate the transition
-      Animated.timing(loadingOpacity, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true
-      }).start(() => {
-        setShowFullScreenLoading(false);
+      // Add to original data using a function to ensure we're working with the latest state
+      setOriginalData(prev => {
+        const newData = [...prev, processedData];
+        // Log every 20th item for debugging
+        if (newData.length % 20 === 0) {
+          console.log(`Original data now has ${newData.length} items`);
+        }
+        return newData;
       });
+
+      setLoadingProgress(prev => prev + 1);
+
+      // After receiving first data, remove initial loading overlay
+      if (initialLoading && receivedCount.current >= 1) {
+        setInitialLoading(false);
+      }
+
+      // After receiving 5 items, transition from full-screen loading to side indicator
+      if (showFullScreenLoading && receivedCount.current >= 5) {
+        // Animate the transition
+        Animated.timing(loadingOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true
+        }).start(() => {
+          setShowFullScreenLoading(false);
+        });
+      }
+
+      // Force a re-process of data every 50 items to ensure UI stays updated
+      if (receivedCount.current % 50 === 0) {
+        // Clear the cached data to force a full rebuild
+        dataByGroupRef.current = {};
+        sectionLayoutCache.current = {};
+      }
+    } catch (error) {
+      console.error('Error handling new item:', error);
     }
   };
 
@@ -740,97 +814,151 @@ const CircularsScreen = ({ navigation }) => {
     </Text>
   );
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={[
-        styles.circularItem,
-        isDarkMode && styles.circularItemDark
-      ]}
-      onPress={() => {
-        if (item.url) {
-          Linking.openURL(item.url).catch(() => {
-            Alert.alert('Failed to open link');
-          });
-        }
-      }}
-    >
-      <View style={styles.circularContent}>
-        <Text
-          style={[
-            styles.circularTitle,
-            isDarkMode && styles.circularTitleDark
-          ]}
-          numberOfLines={1}
-        >
-          {item.filename}
-        </Text>
-        <Text
-          style={[
-            styles.circularDate,
-            isDarkMode && styles.circularDateDark
-          ]}
-        >
-          {item.date}
-        </Text>
-      </View>
-      <View style={styles.tagContainer}>
+  const renderItem = useCallback(({ item, index, section }) => {
+    // Log every 20th item for debugging
+    if (index % 20 === 0) {
+      console.log(`Rendering item ${index} in section ${section.title}`);
+    }
 
-        <Ionicons
-          name="chevron-forward"
-          size={16}
-          color={isDarkMode ? '#4A4A4A' : '#DEDEDE'}
-        />
-      </View>
-    </TouchableOpacity>
-  );
+    return (
+      <TouchableOpacity
+        style={[
+          styles.circularItem,
+          isDarkMode && styles.circularItemDark
+        ]}
+        onPress={() => {
+          console.log(`Pressed item: ${item.filename}`);
+          if (item.url) {
+            Linking.openURL(item.url).catch((error) => {
+              console.error('Failed to open URL:', error);
+              Alert.alert('Failed to open link');
+            });
+          } else {
+            console.warn('No URL for item:', item.filename);
+          }
+        }}
+      >
+        <View style={styles.circularContent}>
+          <Text
+            style={[
+              styles.circularTitle,
+              isDarkMode && styles.circularTitleDark
+            ]}
+            numberOfLines={1}
+          >
+            {item.filename || 'Unnamed Document'}
+          </Text>
+          <Text
+            style={[
+              styles.circularDate,
+              isDarkMode && styles.circularDateDark
+            ]}
+          >
+            {item.date || 'Unknown Date'}
+          </Text>
+        </View>
+        <View style={styles.tagContainer}>
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color={isDarkMode ? '#4A4A4A' : '#DEDEDE'}
+          />
+        </View>
+      </TouchableOpacity>
+    );
+  }, [isDarkMode]);
 
 
 
   const scrollToSection = useCallback((sectionTitle) => {
+    console.log(`Attempting to scroll to section: ${sectionTitle}`);
+
+    // Find the section index
     const sectionIndex = circulars.findIndex(section => section.title === sectionTitle);
+
     if (sectionIndex !== -1) {
-      sectionListRef.current?.scrollToLocation({
-        sectionIndex,
-        itemIndex: 0,
-        viewOffset: 0,
-        animated: true
-      });
+      console.log(`Found section at index: ${sectionIndex}`);
+
+      // Ensure the SectionList is ready
+      setTimeout(() => {
+        if (sectionListRef.current) {
+          try {
+            sectionListRef.current.scrollToLocation({
+              sectionIndex,
+              itemIndex: 0,
+              viewOffset: 0,
+              animated: true
+            });
+            console.log(`Scrolled to section ${sectionTitle} at index ${sectionIndex}`);
+          } catch (error) {
+            console.error('Error scrolling to section:', error);
+
+            // Fallback approach - try again with a delay
+            setTimeout(() => {
+              try {
+                sectionListRef.current?.scrollToLocation({
+                  sectionIndex,
+                  itemIndex: 0,
+                  viewOffset: 0,
+                  animated: false
+                });
+                console.log('Used fallback scroll method');
+              } catch (e) {
+                console.error('Fallback scroll also failed:', e);
+              }
+            }, 300);
+          }
+        }
+      }, 50);
+    } else {
+      console.warn(`Section not found: ${sectionTitle}`);
     }
   }, [circulars]);
 
-  // Add getItemLayout function
-  const getItemLayout = (_, index) => {
-    const itemHeight = 60; // Height of each circular item
-    const headerHeight = 40; // Height of section header
-    let offset = 0;
+  // Reference for section layout cache
+  const sectionLayoutCache = useRef({});
 
-    // Calculate offset by summing up heights of previous sections
-    for (let i = 0; i < index; i++) {
-      const section = circulars[i];
-      if (section) {
-        offset += headerHeight + (section.data.length * itemHeight);
-      }
-    }
+  // Add onScrollToIndexFailed handler with improved error handling
+  const handleScrollToIndexFailed = useCallback((info) => {
+    console.warn('Scroll to index failed:', info);
 
-    return {
-      length: itemHeight,
-      offset,
-      index
-    };
-  };
+    // Clear the section layout cache to force recalculation
+    sectionLayoutCache.current = {};
 
-  // Add onScrollToIndexFailed handler
-  const handleScrollToIndexFailed = (info) => {
+    // Try a different approach with a delay
     const wait = new Promise(resolve => setTimeout(resolve, 500));
     wait.then(() => {
-      sectionListRef.current?.scrollToLocation({
-        sectionIndex: info.index,
-        itemIndex: 0,
-        viewOffset: 0,
-        animated: true
-      });
+      if (sectionListRef.current) {
+        try {
+          // First try with animation off
+          sectionListRef.current.scrollToLocation({
+            sectionIndex: info.index,
+            itemIndex: 0,
+            viewOffset: 0,
+            animated: false
+          });
+
+          // Then try a more gradual approach if needed
+          setTimeout(() => {
+            if (sectionListRef.current) {
+              try {
+                sectionListRef.current.scrollToLocation({
+                  sectionIndex: info.index,
+                  itemIndex: 0,
+                  viewOffset: 0,
+                  animated: true
+                });
+              } catch (e) {
+                console.error('Second scroll attempt failed:', e);
+              }
+            }
+          }, 300);
+        } catch (error) {
+          console.error('First scroll attempt failed:', error);
+        }
+      }
     });
-  };
+  }, []);
 
   // Reference for SectionList
   const sectionListRef = useRef(null);
@@ -1000,16 +1128,30 @@ const CircularsScreen = ({ navigation }) => {
           sections={circulars}
           renderItem={renderItem}
           renderSectionHeader={renderSectionHeader}
-          keyExtractor={(item, index) => item.url || `circular-${index}`}
+          keyExtractor={(item) => item.id || item.url || `circular-${item.filename}-${Math.random()}`}
           contentContainerStyle={[styles.listContainer, { paddingBottom: 80 }]}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={!loading ? renderEmptyList : null}
           stickySectionHeadersEnabled={false}
-          getItemLayout={getItemLayout}
           onScrollToIndexFailed={handleScrollToIndexFailed}
-          initialNumToRender={10}
-          maxToRenderPerBatch={10}
-          windowSize={5}
+          initialNumToRender={100}
+          maxToRenderPerBatch={50}
+          windowSize={21}
+          removeClippedSubviews={false}
+          updateCellsBatchingPeriod={30}
+          onEndReachedThreshold={0.5}
+          onEndReached={() => {
+            console.log('End reached, forcing refresh');
+            // Force a refresh when user scrolls to the end
+            setCirculars([...circulars]);
+          }}
+          maintainVisibleContentPosition={{
+            minIndexForVisible: 0,
+            autoscrollToTopThreshold: 10
+          }}
+          // Add these props to improve performance
+          disableVirtualization={false}
+          legacyImplementation={false}
         />
         <IndexedScrollBar
           sections={circulars}

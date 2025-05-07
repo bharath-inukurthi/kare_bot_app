@@ -8,9 +8,9 @@
     "icon": "./assets/icon.png",
     "newArchEnabled": true,
     "splash": {
+      "backgroundColor": "#CFF6F5",
       "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0052cc"
+      "resizeMode": "contain"
     },
     "scheme": "kare-bot",
     "updates": {
@@ -63,7 +63,8 @@
       ],
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "./expo-plugin-kotlin-jvm-target"
     ],
     "extra": {
       "eas": {

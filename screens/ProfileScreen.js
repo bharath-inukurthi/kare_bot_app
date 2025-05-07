@@ -16,7 +16,7 @@ import {
   Animated,
   ActivityIndicator
 } from 'react-native';
-import { getAuth, signOut } from 'firebase/auth';
+import supabase from '../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
@@ -64,7 +64,7 @@ const ProfileScreen = () => {
       })
     ]).start();
   };
-  
+
   // Add loading animation function
   const animateLoading = (show) => {
     Animated.parallel([
@@ -81,7 +81,7 @@ const ProfileScreen = () => {
       })
     ]).start();
   };
-  
+
   const [user, setUser] = React.useState(null);
   const [isEditing, setIsEditing] = React.useState(false);
   const [showSectionModal, setShowSectionModal] = React.useState(false);
@@ -147,15 +147,16 @@ useEffect(() => {
 
   const loadUserData = async () => {
     try {
-      const auth = getAuth();
-      const currentUser = auth.currentUser;
+      // Get the current user from Supabase
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+
       if (currentUser) {
-        // Extract Google profile data
+        // Extract user data
         const userData = {
-          displayName: currentUser.displayName,
+          displayName: currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || 'KLU Student',
           email: currentUser.email,
-          photoURL: currentUser.photoURL,
-          providerId: currentUser.providerData[0]?.providerId
+          photoURL: currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture,
+          providerId: currentUser.app_metadata?.provider || 'email'
         };
         setUser(userData);
 
@@ -193,7 +194,7 @@ useEffect(() => {
       // Fetch and cache timetable after updating details
       console.log('Fetching timetable for:', year, section, semester);
       await fetchAndCacheTimeTable(year, section, semester);
-      
+
       // Simulate network delay for demonstration purposes (remove in production)
       setTimeout(() => {
         setIsLoading(false);
@@ -210,8 +211,14 @@ useEffect(() => {
   // Function to handle sign out
   const handleSignOut = async () => {
     try {
-      const auth = getAuth();
-      await signOut(auth);
+      // Use Supabase to sign out
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        throw error;
+      }
+
+      console.log('User signed out successfully');
       // Note: The App component will handle redirecting to the login screen
     } catch (error) {
       console.error('Sign out error:', error);
@@ -294,9 +301,9 @@ useEffect(() => {
     >
       <Text style={styles.creditsDismissText}>×</Text>
     </TouchableOpacity>
-    
+
     {/* Director credit with fade in/out */}
-    <Animated.View 
+    <Animated.View
       style={{
         position: 'absolute',
         top: 0,
@@ -356,7 +363,7 @@ useEffect(() => {
     </Animated.View>
   </Animated.View>
 </Modal>
-      
+
       <SafeAreaView style={{ flex: 1, backgroundColor: isDarkMode ? COLORS.backgroundDark : COLORS.background }}>
         <LinearGradient
           colors={isDarkMode ? ['#1B62B9','#232b47',COLORS.backgroundDark ] : ['#a7f3f3', '#f8fafc',COLORS.background ]}
@@ -384,7 +391,7 @@ useEffect(() => {
               marginBottom: 12,
             }}>
               <Image
-                source={user?.photoURL ? { uri: user.photoURL } : require('../assets/default-avatar.png')}
+                source={user?.photoURL ? { uri: user.photoURL } : require('../assets/avatar.png')}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode="cover"
               />
@@ -460,11 +467,11 @@ useEffect(() => {
               visible={isEditing}
               onRequestClose={() => !isLoading && setIsEditing(false)}
             >
-              <Pressable 
+              <Pressable
                 style={[styles.modalOverlay, { backgroundColor: isDarkMode ? 'rgba(15,23,42,0.7)' : 'rgba(0,0,0,0.2)' }]}
                 onPress={() => !isLoading && setIsEditing(false)}
               >
-                <View style={[styles.modalContainer, { backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight }]}> 
+                <View style={[styles.modalContainer, { backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight }]}>
                   <Text style={[styles.modalTitle, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Edit Academic Details</Text>
                   <View style={styles.editContainer}>
                     <View style={styles.inputContainer}>
@@ -540,22 +547,22 @@ useEffect(() => {
                       </TouchableOpacity>
                     </View>
                     <View style={styles.buttonContainer}>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={[styles.cancelButton, isLoading && styles.disabledButton, { backgroundColor: isDarkMode ? COLORS.backgroundDark : COLORS.background }]}
                         onPress={() => !isLoading && setIsEditing(false)}
                         disabled={isLoading}
                       >
                         <Text style={[styles.cancelButtonText, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Cancel</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={[styles.saveButton, isLoading && styles.disabledButton, { backgroundColor: isDarkMode ? COLORS.primary : COLORS.primary }]}
                         onPress={!isLoading ? handleSaveDetails : null}
                         disabled={isLoading}
                       >
                         {isLoading ? (
-                          <Animated.View 
-                            style={{ 
-                              opacity: loadingOpacity, 
+                          <Animated.View
+                            style={{
+                              opacity: loadingOpacity,
                               transform: [{ scale: loadingScale }],
                               flexDirection: 'row',
                               alignItems: 'center',
@@ -583,11 +590,11 @@ useEffect(() => {
             animationType="fade"
             onRequestClose={() => setShowSectionModal(false)}
           >
-            <Pressable 
+            <Pressable
               style={[styles.modalOverlay, { backgroundColor: isDarkMode ? 'rgba(15,23,42,0.7)' : 'rgba(0,0,0,0.2)' }]}
               onPress={() => setShowSectionModal(false)}
             >
-              <View style={[styles.modalContent, { backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight }]}> 
+              <View style={[styles.modalContent, { backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight }]}>
                 <Text style={[styles.modalTitle, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Select Section</Text>
                 <ScrollView style={styles.optionsList}>
                   {SECTION_OPTIONS.map((option) => (
@@ -636,11 +643,11 @@ useEffect(() => {
             animationType="fade"
             onRequestClose={() => setShowYearModal(false)}
           >
-            <Pressable 
+            <Pressable
               style={[styles.modalOverlay, { backgroundColor: isDarkMode ? 'rgba(15,23,42,0.7)' : 'rgba(0,0,0,0.2)' }]}
               onPress={() => setShowYearModal(false)}
             >
-              <View style={[styles.modalContent, { backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight }]}> 
+              <View style={[styles.modalContent, { backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight }]}>
                 <Text style={[styles.modalTitle, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Select Year</Text>
                 <ScrollView style={styles.optionsList}>
                   {YEAR_OPTIONS.map((option) => (
@@ -689,11 +696,11 @@ useEffect(() => {
             animationType="fade"
             onRequestClose={() => setShowSemesterModal(false)}
           >
-            <Pressable 
+            <Pressable
               style={[styles.modalOverlay, { backgroundColor: isDarkMode ? 'rgba(15,23,42,0.7)' : 'rgba(0,0,0,0.2)' }]}
               onPress={() => setShowSemesterModal(false)}
             >
-              <View style={[styles.modalContent, { backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight }]}> 
+              <View style={[styles.modalContent, { backgroundColor: isDarkMode ? COLORS.cardDark : COLORS.cardLight }]}>
                 <Text style={[styles.modalTitle, { color: isDarkMode ? COLORS.primaryLight : COLORS.primary }]}>Select Semester</Text>
                 <ScrollView style={styles.optionsList}>
                   {SEMESTER_OPTIONS.map((option) => (
@@ -752,7 +759,7 @@ useEffect(() => {
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
-      
+
       <Portal>
         <Dialog
           visible={showFeedbackDialog}

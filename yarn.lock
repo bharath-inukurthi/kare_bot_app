@@ -1122,7 +1122,7 @@
     "@babel/plugin-transform-react-jsx-development" "^7.27.1"
     "@babel/plugin-transform-react-pure-annotations" "^7.27.1"
 
-"@babel/preset-typescript@^7.13.0", "@babel/preset-typescript@^7.16.7", "@babel/preset-typescript@^7.23.0", "@babel/preset-typescript@^7.23.3":
+"@babel/preset-typescript@^7.13.0", "@babel/preset-typescript@^7.16.7", "@babel/preset-typescript@^7.17.12", "@babel/preset-typescript@^7.23.0", "@babel/preset-typescript@^7.23.3":
   version "7.27.1"
   resolved "https://registry.yarnpkg.com/@babel/preset-typescript/-/preset-typescript-7.27.1.tgz#190742a6428d282306648a55b0529b561484f912"
   integrity sha512-l7WfQfX0WK4M0v2RudjuQK4u99BS6yLHYEmdtVPP7lKV013zr9DygFuWNlnbvQ9LR+LS0Egz/XAvGx5U9MX0fQ==
@@ -7470,6 +7470,11 @@ loose-envify@^1.0.0, loose-envify@^1.1.0, loose-envify@^1.4.0:
   dependencies:
     js-tokens "^3.0.0 || ^4.0.0"
 
+lottie-react-native@7.1.0:
+  version "7.1.0"
+  resolved "https://registry.yarnpkg.com/lottie-react-native/-/lottie-react-native-7.1.0.tgz#705d1f7603b7a1b3d0cf0b4bb9a193d0dba4efa4"
+  integrity sha512-73jtQySxRZ8KTTSKf6CtcpCt8tpOCw4NRiCST4HTYgXlycxIihIp89jRcK8rS/QiBKl5bzyixMzpVmd4mYVH5Q==
+
 lru-cache@^10.0.1, lru-cache@^10.2.0:
   version "10.4.3"
   resolved "https://registry.yarnpkg.com/lru-cache/-/lru-cache-10.4.3.tgz#410fc8a17b70e598013df257c2446b7f3383f119"
@@ -8898,6 +8903,13 @@ react-native-dotenv@^3.4.9:
   integrity sha512-6vnIE+WHABSeHCaYP6l3O1BOEhWxKH6nHAdV7n/wKn/sciZ64zPPp2NUdEUf1m7g4uuzlLbjgr+6uDt89q2DOg==
   dependencies:
     dotenv "^16.4.5"
+
+react-native-draggable-flatlist@^4.0.3:
+  version "4.0.3"
+  resolved "https://registry.yarnpkg.com/react-native-draggable-flatlist/-/react-native-draggable-flatlist-4.0.3.tgz#eb0bb3149059f48855b53aeb9728ab2eb361e4db"
+  integrity sha512-2F4x5BFieWdGq9SetD2nSAR7s7oQCSgNllYgERRXXtNfSOuAGAVbDb/3H3lP0y5f7rEyNwabKorZAD/SyyNbDw==
+  dependencies:
+    "@babel/preset-typescript" "^7.17.12"
 
 react-native-drawer-layout@^4.1.7:
   version "4.1.7"

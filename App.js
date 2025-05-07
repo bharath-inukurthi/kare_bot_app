@@ -1,37 +1,22 @@
 import * as ImagePicker from "expo-image-picker";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import 'react-native-reanimated';
-import Animated from 'react-native-reanimated';
+import Animated, {
+  withTiming,
+  useSharedValue
+} from 'react-native-reanimated';
 import {
   ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
   StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
   View,
   LogBox,
   Image,
 } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Provider as PaperProvider } from 'react-native-paper';
-import { initializeApp, getApps } from "firebase/app";
-import { 
-  getAuth, 
-  GoogleAuthProvider, 
-  signInWithCredential,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, 
-  onAuthStateChanged, 
-  signOut,
-  initializeAuth,
-  getReactNativePersistence
-} from "firebase/auth";
+import AlertDialog from './components/AlertDialog';
+// Firebase imports removed as we're now using Supabase
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -41,6 +26,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import LottieView from 'lottie-react-native';
+import supabase from './lib/supabase';
 
 // Import screens
 import FacultyAvailabilityScreen from './screens/FacultyAvailabilityScreen';
@@ -84,26 +71,7 @@ const COLORS = {
   }
 };
 
-// Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyA2ju8aCnKvDen2-uuvA6EoSospn7xRscE",
-  authDomain: "faculty-meet.firebaseapp.com",
-  projectId: "faculty-meet",
-  storageBucket: "faculty-meet.firebasestorage.app",
-  messagingSenderId: "368113711736",
-  appId: "1:368113711736:web:837ea5ebf8d88d78678b8d",
-  measurementId: "G-L5XHHB8DX8"
-};
-
-// Initialize Firebase if not already initialized
-if (!getApps().length) {
-  const app = initializeApp(firebaseConfig);
-  initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage)
-  });
-}
-
-// Firebase sets some timers for long periods which trigger warnings. Ignoring them.
+// Ignore long timer warnings from Supabase
 LogBox.ignoreLogs(['Setting a timer for a long period']);
 
 // Create navigators
@@ -126,7 +94,7 @@ const MainStack = () => {
 
 const MainApp = () => {
   const { theme } = useTheme();
-  
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -140,8 +108,8 @@ const MainApp = () => {
               <View style={[
                 styles.toolsTabContainer,
                 {
-                  backgroundColor: focused 
-                    ? (theme.isDarkMode ? '#1E3A8A' : '#005EAC') 
+                  backgroundColor: focused
+                    ? (theme.isDarkMode ? '#1E3A8A' : '#005EAC')
                     : (theme.isDarkMode ? '#005EAC' : '#4299E1'),
                   width: 56,
                   height: 56,
@@ -156,9 +124,9 @@ const MainApp = () => {
                   transform: [{ translateY: -20 }],
                 }
               ]}>
-                <Image 
+                <Image
                   source={require('./assets/tools icon.png')}
-                  style={[styles.toolsIcon, { 
+                  style={[styles.toolsIcon, {
                     tintColor: '#fff',
                     width: 32,
                     height: 32,
@@ -191,7 +159,7 @@ const MainApp = () => {
   );
 };
 
-export default function App() {
+const App = () => {
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -200,6 +168,18 @@ export default function App() {
   const [showUserDetails, setShowUserDetails] = useState(false);
   const [hasUserDetails, setHasUserDetails] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const animationRef = useRef(null);
+
+  // Alert dialog state
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+  const [alertConfirmAction, setAlertConfirmAction] = useState(() => {});
+
+  // Animation values
+  const scale = useSharedValue(1);
+  const opacity = useSharedValue(1);
 
   // Calculate redirect URI for Google auth
   const redirectUri = useMemo(() => {
@@ -213,7 +193,7 @@ export default function App() {
   }, []);
 
   // Initialize Google Auth Request hook
-  const [request, response, promptAsync] = Google.useAuthRequest({
+  const [_, response, promptAsync] = Google.useAuthRequest({
     clientId: '368113711736-vd9kpllf1b3f5oh2qhqa2qh6vko3edta.apps.googleusercontent.com',
     androidClientId: '368113711736-n9vnkt8m5kv6ce8nq2nlrr05cr5kirp0.apps.googleusercontent.com',
     iosClientId: '368113711736-8dicp506f6rk4biti5e009qag1jgvqmk.apps.googleusercontent.com',
@@ -245,11 +225,65 @@ export default function App() {
 
   // Effect for handling auth state changes
   useEffect(() => {
-    const auth = getAuth();
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
+    // Subscribe to auth state changes with Supabase
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state changed:', event);
+
+        if (session?.user) {
+          const userEmail = session.user.email;
+
+          // Check if the email domain is klu.ac.in or our test email
+          if (userEmail && !userEmail.endsWith('@klu.ac.in') && userEmail !== 'test.klu@gmail.com') {
+            console.log('Email domain not allowed:', userEmail);
+            showAlert(
+              "Authentication Failed",
+              "Only @klu.ac.in email addresses or test.klu@gmail.com are allowed to sign in."
+            );
+
+            // Sign out if not from the allowed domain
+            await supabase.auth.signOut();
+            setUser(null);
+          } else {
+            setUser(session.user);
+          }
+        } else {
+          setUser(null);
+        }
+
+        if (initializing) setInitializing(false);
+      }
+    );
+
+    // Also get the initial session
+    const getInitialSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        const userEmail = session.user.email;
+
+        // Check if the email domain is klu.ac.in or our test email
+        if (userEmail && !userEmail.endsWith('@klu.ac.in') && userEmail !== 'test.klu@gmail.com') {
+          console.log('Email domain not allowed:', userEmail);
+          showAlert(
+            "Authentication Failed",
+            "Only @klu.ac.in email addresses are allowed to sign in."
+          );
+
+          // Sign out if not from the allowed domain
+          await supabase.auth.signOut();
+          setUser(null);
+        } else {
+          setUser(session.user);
+        }
+      } else {
+        setUser(null);
+      }
+
       if (initializing) setInitializing(false);
-    });
+    };
+
+    getInitialSession();
 
     const timeout = setTimeout(() => {
       if (initializing) {
@@ -259,7 +293,7 @@ export default function App() {
     }, 10000);
 
     return () => {
-      unsubscribe();
+      subscription.unsubscribe();
       clearTimeout(timeout);
     };
   }, [initializing]);
@@ -272,41 +306,40 @@ export default function App() {
       try {
         if (!response.params.id_token) {
           console.error('Error: No id_token received in response', response);
-          Alert.alert('Authentication Error', 'Failed to receive authentication token');
+          showAlert('Authentication Error', 'Failed to receive authentication token');
           setIsLoading(false);
           return;
         }
-        
-        const { id_token } = response.params;
-        const credential = GoogleAuthProvider.credential(id_token);
-        const auth = getAuth();
-        
+
         setIsLoading(true);
-        
-        const result = await signInWithCredential(auth, credential);
-        const userEmail = result.user.email;
-        
-        if (!userEmail.endsWith('@klu.ac.in')) {
-          await signOut(auth);
-          throw new Error('Only @klu.ac.in email addresses are allowed');
+
+        // Use Supabase to sign in with Google OAuth token
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            queryParams: {
+              access_token: response.params.access_token,
+              id_token: response.params.id_token,
+            }
+          }
+        });
+
+        if (error) {
+          throw error;
         }
-        
-        setUser(result.user);
+
+        // For OAuth sign-in, we need to wait for the auth state change
+        // as the user data isn't immediately available
+        console.log('OAuth sign-in initiated, waiting for auth state change');
       } catch (error) {
         console.error('Google authentication error:', error);
         let errorMessage = 'Authentication failed. Please try again.';
-        
-        if (error.code === 'auth/invalid-credential') {
-          errorMessage = 'The authentication credential is invalid. Please try again.';
-        } else if (error.code === 'auth/account-exists-with-different-credential') {
-          errorMessage = 'An account already exists with the same email address but different sign-in credentials.';
-        } else if (error.code === 'auth/operation-not-allowed') {
-          errorMessage = 'Google sign-in is not enabled for this project.';
-        } else if (error.message) {
+
+        if (error.message) {
           errorMessage = error.message;
         }
-        
-        Alert.alert('Authentication Error', errorMessage);
+
+        showAlert('Authentication Error', errorMessage);
       } finally {
         setIsLoading(false);
       }
@@ -318,63 +351,69 @@ export default function App() {
   // Handle email authentication (sign in or sign up)
   const handleEmailAuth = async (isSignUp = false) => {
     // Validate email domain
-    if (!email.endsWith('@klu.ac.in')) {
-      Alert.alert(
+    if (!email.endsWith('@klu.ac.in') && email !== 'test.klu@gmail.com') {
+      showAlert(
         "Authentication Failed",
-        "Only @klu.ac.in email addresses are allowed to sign in.",
-        [{ text: "OK" }]
+        "Only @klu.ac.in email addresses or test.klu@gmail.com are allowed to sign in."
       );
       return;
     }
-    
+
     // Validate password
     if (!password || password.length < 6) {
-      Alert.alert(
+      showAlert(
         "Invalid Password",
-        "Password must be at least 6 characters long.",
-        [{ text: "OK" }]
+        "Password must be at least 6 characters long."
       );
       return;
     }
-    
+
     setIsLoading(true);
-    
+
     try {
-      const auth = getAuth();
-      let userCredential;
-      
       console.log(`Attempting ${isSignUp ? 'sign up' : 'sign in'} with email:`, email);
-      
+
+      let result;
+
       if (isSignUp) {
-        // Create new user
-        userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        // Create new user with Supabase
+        result = await supabase.auth.signUp({
+          email,
+          password,
+        });
         console.log('User created successfully');
       } else {
-        // Sign in existing user
-        userCredential = await signInWithEmailAndPassword(auth, email, password);
+        // Sign in existing user with Supabase
+        result = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
         console.log('User signed in successfully');
       }
-      
-      setUser(userCredential.user);
-    } catch (error) {
-      console.error('Email auth error:', error.code, error.message);
-      
-      let errorMessage = 'Authentication failed. Please try again.';
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'This email is already registered. Please log in instead.';
-      } else if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email. Please sign up.';
-      } else if (error.code === 'auth/wrong-password') {
-        errorMessage = 'Incorrect password. Please try again.';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Invalid email format. Please check your email.';
-      } else if (error.code === 'auth/invalid-login-credentials' || error.code === 'auth/invalid-credential') {
-        errorMessage = 'Invalid email or password. Please check your credentials and try again.';
-      } else if (debugMode) {
-        errorMessage = `${error.code}: ${error.message}`;
+
+      if (result.error) {
+        throw result.error;
       }
-      
-      Alert.alert("Authentication Error", errorMessage);
+
+      setUser(result.data.user);
+    } catch (error) {
+      console.error('Email auth error:', error);
+
+      let errorMessage = 'Authentication failed. Please try again.';
+
+      if (error.message.includes('already registered')) {
+        errorMessage = 'This email is already registered. Please log in instead.';
+      } else if (error.message.includes('not found')) {
+        errorMessage = 'No account found with this email. Please sign up.';
+      } else if (error.message.includes('Invalid login credentials')) {
+        errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+      } else if (error.message.includes('Invalid email')) {
+        errorMessage = 'Invalid email format. Please check your email.';
+      } else if (debugMode && error.message) {
+        errorMessage = error.message;
+      }
+
+      showAlert("Authentication Error", errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -383,53 +422,141 @@ export default function App() {
   // Create a test user for development
   const createTestUser = async () => {
     setIsLoading(true);
-    const testEmail = 'test@klu.ac.in';
+    // Using a more standard email format that Supabase will accept
+    const testEmail = 'test.klu@gmail.com';
     const testPassword = 'test123456';
-    
+
     try {
-      const auth = getAuth();
       console.log('Creating test user:', testEmail);
-      
-      try {
-        // Try to create a new user first
-        const userCredential = await createUserWithEmailAndPassword(auth, testEmail, testPassword);
-        console.log('Test user created successfully');
-        Alert.alert(
-          'Test User Created',
-          `Email: ${testEmail}\nPassword: ${testPassword}\n\nYou can now sign in with these credentials.`
-        );
-        setUser(userCredential.user);
-      } catch (error) {
+
+      // Try to create a new user with Supabase
+      const { data, error } = await supabase.auth.signUp({
+        email: testEmail,
+        password: testPassword,
+      });
+
+      if (error) {
         // If user already exists, try to sign in
-        if (error.code === 'auth/email-already-in-use') {
+        if (error.message.includes('already registered')) {
           console.log('Test user already exists, trying to sign in');
-          const userCredential = await signInWithEmailAndPassword(auth, testEmail, testPassword);
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+            email: testEmail,
+            password: testPassword,
+          });
+
+          if (signInError) {
+            throw signInError;
+          }
+
           console.log('Signed in with test user');
-          setUser(userCredential.user);
+          setUser(signInData.user);
+          showAlert(
+            'Test User Signed In',
+            `Successfully signed in with test user:\nEmail: ${testEmail}\nPassword: ${testPassword}`
+          );
         } else {
           throw error;
         }
+      } else {
+        console.log('Test user created successfully');
+        setUser(data.user);
+        showAlert(
+          'Test User Created',
+          `Email: ${testEmail}\nPassword: ${testPassword}\n\nYou can now sign in with these credentials.`
+        );
       }
     } catch (error) {
-      console.error('Test user error:', error.code, error.message);
-      
+      console.error('Test user error:', error);
+
       let errorMessage = 'Failed to create or sign in with test user.';
-      if (debugMode) {
-        errorMessage = `${error.code}: ${error.message}`;
+      if (debugMode && error.message) {
+        errorMessage = error.message;
       }
-      
-      Alert.alert("Test User Error", errorMessage);
+
+      showAlert("Test User Error", errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Render loading state
-  if (initializing) {
+  // Initialize animation when component mounts
+  useEffect(() => {
+    opacity.value = 1;
+    scale.value = 1;
+
+    const fallbackTimer = setTimeout(() => {
+      if (showSplash) {
+        console.log('Fallback timer triggered for splash screen');
+        setShowSplash(false);
+      }
+    }, 8000);
+
+    return () => clearTimeout(fallbackTimer);
+  }, []);
+
+  // Effect to play animation after component is mounted
+  useEffect(() => {
+    const animationTimer = setTimeout(() => {
+      if (animationRef.current) {
+        console.log('Starting Lottie animation');
+        animationRef.current.reset();
+        animationRef.current.play();
+      }
+    }, 100);
+
+    return () => clearTimeout(animationTimer);
+  }, []);
+
+  // Helper function to show alerts using React Native Paper
+  const showAlert = (title, message, confirmAction = () => {}) => {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertConfirmAction(() => confirmAction);
+    setAlertVisible(true);
+  };
+
+  // Handle animation completion
+  const onAnimationFinish = () => {
+    console.log('Splash animation finished');
+
+    setTimeout(() => {
+      opacity.value = withTiming(0, { duration: 500 });
+      scale.value = withTiming(1.2, { duration: 500 });
+
+      setTimeout(() => {
+        setShowSplash(false);
+      }, 500);
+    }, 1000);
+  };
+
+  if (showSplash) {
     return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading Kare Bot...</Text>
+      <View style={[styles.container, { backgroundColor: '#CFF6F5', justifyContent: 'center', alignItems: 'center' }]}>
+        <Animated.View
+          style={[
+            styles.splashContainer,
+            {
+              opacity: opacity,
+              transform: [
+                { scale: scale }
+              ],
+            }
+          ]}
+        >
+          <LottieView
+            ref={animationRef}
+            source={require('./assets/splash.json')}
+            style={styles.splashAnimation}
+            autoPlay={false}
+            loop={false}
+            speed={1}
+            onAnimationFinish={onAnimationFinish}
+            renderMode="HARDWARE"
+            cacheStrategy="strong"
+            hardwareAccelerationAndroidEnabled={true}
+            resizeMode="contain"
+          />
+        </Animated.View>
       </View>
     );
   }
@@ -437,11 +564,11 @@ export default function App() {
   // Render user details screen if needed
   if (user && (showUserDetails || !hasUserDetails)) {
     return (
-      <UserDetailsScreen 
+      <UserDetailsScreen
         onComplete={() => {
           setShowUserDetails(false);
           setHasUserDetails(true);
-        }} 
+        }}
       />
     );
   }
@@ -465,9 +592,9 @@ export default function App() {
             if (result.type !== 'success') {
               setIsLoading(false);
             }
-          }).catch(error => {
+          }).catch(() => {
             setIsLoading(false);
-            Alert.alert('Authentication Error', 'Error starting Google authentication');
+            showAlert('Authentication Error', 'Error starting Google authentication');
           });
         }}
         createTestUser={createTestUser}
@@ -485,11 +612,23 @@ export default function App() {
           <NavigationContainer>
             <MainStack />
           </NavigationContainer>
+
+          {/* Alert Dialog */}
+          <AlertDialog
+            visible={alertVisible}
+            onDismiss={() => setAlertVisible(false)}
+            title={alertTitle}
+            message={alertMessage}
+            onConfirm={() => {
+              setAlertVisible(false);
+              alertConfirmAction();
+            }}
+          />
         </GestureHandlerRootView>
       </ThemeProvider>
     </PaperProvider>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -669,4 +808,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  splashContainer: {
+    width: 192,
+    height: 192,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  splashAnimation: {
+    width: '100%',
+    height: '100%',
+  },
 });
+
+export default App;
