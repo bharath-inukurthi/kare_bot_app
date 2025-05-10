@@ -203,6 +203,10 @@ const App = () => {
     scopes: ['profile', 'email'],
     usePKCE: true,
     prompt: 'select_account',
+    responseType: 'code',
+    extraParams: {
+      nonce: 'random_nonce',
+    },
   });
 
   // Effect for checking user details
@@ -300,10 +304,22 @@ const App = () => {
 
   // Effect for handling Google authentication response
   useEffect(() => {
-    if (!response || response.type !== 'success') return;
+    console.log('Google auth response received:', response);
+    
+    if (!response) {
+      console.log('No response received from Google auth');
+      return;
+    }
+    
+    if (response.type !== 'success') {
+      console.log('Google auth response type:', response.type);
+      return;
+    }
 
     const handleGoogleSignIn = async () => {
       try {
+        console.log('Starting Google sign in process with response:', response);
+        
         if (!response.params.id_token) {
           console.error('Error: No id_token received in response', response);
           showAlert('Authentication Error', 'Failed to receive authentication token');
@@ -312,27 +328,40 @@ const App = () => {
         }
 
         setIsLoading(true);
+        console.log('Attempting Supabase sign in with ID token...');
 
-        // Use Supabase to sign in with Google OAuth token
-        const { error } = await supabase.auth.signInWithOAuth({
+        // Use Supabase to sign in with the Google ID token
+        const { data, error } = await supabase.auth.signInWithIdToken({
           provider: 'google',
-          options: {
-            queryParams: {
-              access_token: response.params.access_token,
-              id_token: response.params.id_token,
-            }
-          }
+          token: response.params.id_token,
+          // nonce: 'random_nonce' // Supabase handles nonce automatically with signInWithIdToken if needed by provider config
         });
+
+        console.log('Supabase signInWithIdToken response:', { data, error });
 
         if (error) {
           throw error;
         }
 
-        // For OAuth sign-in, we need to wait for the auth state change
-        // as the user data isn't immediately available
-        console.log('OAuth sign-in initiated, waiting for auth state change');
+        // setUser will be handled by the onAuthStateChange listener
+        // console.log('ID token sign-in completed successfully, user should be set by onAuthStateChange');
+        // If you need to immediately verify session (though onAuthStateChange should cover it):
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        console.log('Session after ID token sign-in attempt:', { session, sessionError });
+
+        if (sessionError) {
+          // Potentially log this, but onAuthStateChange is the primary mechanism
+          console.warn('Error fetching session immediately after sign-in:', sessionError);
+        }
+
+        if (!session && !error) { // if no error from signInWithIdToken but no session yet
+             console.log('No session immediately available, relying on onAuthStateChange.');
+        } else if (session) {
+            console.log('Session established.');
+        }
+
       } catch (error) {
-        console.error('Google authentication error:', error);
+        console.error('Google authentication error with signInWithIdToken:', error);
         let errorMessage = 'Authentication failed. Please try again.';
 
         if (error.message) {
@@ -549,7 +578,7 @@ const App = () => {
             style={styles.splashAnimation}
             autoPlay={false}
             loop={false}
-            speed={1}
+            speed={0.8}
             onAnimationFinish={onAnimationFinish}
             renderMode="HARDWARE"
             cacheStrategy="strong"
@@ -585,16 +614,25 @@ const App = () => {
         handleEmailAuth={handleEmailAuth}
         handleGoogleSignIn={() => {
           setIsLoading(true);
+          console.log('Starting Google sign-in prompt');
+          
           promptAsync({
-            useProxy: Platform.OS !== 'web' && __DEV__,
+            useProxy: Platform.OS !== 'web' && __DEV__, // Use proxy in development
             showInRecents: true,
+            responseType: Platform.OS === 'web' ? 'token' : 'id_token'
           }).then(result => {
+            console.log('Google sign-in prompt result:', result);
             if (result.type !== 'success') {
+              console.log('Google sign-in was not successful:', result.type);
               setIsLoading(false);
+              if (result.type === 'error') {
+                showAlert('Authentication Error', 'Google sign-in was cancelled or failed');
+              }
             }
-          }).catch(() => {
+          }).catch(error => {
+            console.error('Google sign-in error:', error);
             setIsLoading(false);
-            showAlert('Authentication Error', 'Error starting Google authentication');
+            showAlert('Authentication Error', 'Failed to initialize Google sign-in');
           });
         }}
         createTestUser={createTestUser}
