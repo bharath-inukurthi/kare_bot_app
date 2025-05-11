@@ -1,108 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-
-// Indexed ScrollBar Component
-const IndexedScrollBar = ({ sections, onIndexPress, sortType, isDarkMode, sectionListRef }) => {
-  const handleLayout = useCallback((event) => {
-    const { y, height } = event.nativeEvent.layout;
-    scrollbarMeasurements.current = {
-      y,
-      height,
-      measured: true
-    };
-  }, []);
-
-  const getIndices = () => {
-    if (sortType === 'date') {
-      return sections.map(section => {
-        const [month, year] = section.title.split(' ');
-        const shortYear = year ? year.slice(-2) : '';
-        return {
-          label: `${month ? month.substring(0, 3).toUpperCase() : ''}\n'${shortYear}`,
-          value: section.title
-        };
-      });
-    } else {
-      return sections.map(section => ({
-        label: section.title ? section.title[0].toUpperCase() : '',
-        value: section.title
-      }));
-    }
-  };
-
-  const [activeIndex, setActiveIndex] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const indices = getIndices();
-  const itemHeight = sortType === 'date' ? 32 : 20;
-  const POP_DISTANCE = -35;
-
-  const scaleAnims = useRef(indices.map(() => new Animated.Value(1))).current;
-  const translateXAnims = useRef(indices.map(() => new Animated.Value(0))).current;
-  const containerRef = useRef(null);
-  const scrollbarMeasurements = useRef({
-    y: 0,
-    height: 0,
-    measured: false
-  });
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
-
-  // ... Copy all the useEffect hooks and helper functions from CircularsScreen's IndexedScrollBar ...
-
-  return (
-    <View
-      ref={containerRef}
-      onLayout={handleLayout}
-      style={{
-        position: 'absolute',
-        right: 0,
-        top: '50%',
-        transform: [{ translateY }],
-        zIndex: 100,
-        paddingRight: 4,
-      }}
-      {...panResponder.panHandlers}
-    >
-      {indices.map((index, i) => (
-        <TouchableOpacity
-          key={i}
-          onPress={() => handleIndexPress(index, i)}
-          style={{
-            height: itemHeight,
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}
-        >
-          <Animated.View
-            style={{
-              transform: [
-                { scale: scaleAnims[i] },
-                { translateX: translateXAnims[i] }
-              ],
-            }}
-          >
-            <Text
-              style={{
-                color: isDarkMode ? '#fff' : '#0F172A',
-                fontSize: 12,
-                fontWeight: activeIndex === i ? '600' : '400',
-                textAlign: 'center',
-              }}
-            >
-              {index.label}
-            </Text>
-          </Animated.View>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-};
-
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -121,8 +17,6 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   KeyboardAvoidingView,
-  Animated,
-  PanResponder
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -180,19 +74,6 @@ const SortButton = ({ label, active, onPress, style, isDarkMode, theme }) => (
 
 const CertificatesScreen = ({ navigation }) => {
   const { isDarkMode, theme } = useTheme();
-  const sectionListRef = useRef(null);
-
-  const scrollToSection = (sectionTitle) => {
-    const sectionIndex = certificates.findIndex(section => section.title === sectionTitle);
-    if (sectionIndex !== -1 && sectionListRef.current) {
-      sectionListRef.current.scrollToLocation({
-        sectionIndex,
-        itemIndex: 0,
-        animated: true,
-        viewOffset: 0
-      });
-    }
-  };
   // State variables
   const [rawCertificates, setRawCertificates] = useState([]);
   const [certificates, setCertificates] = useState([]);
@@ -1240,21 +1121,12 @@ const CertificatesScreen = ({ navigation }) => {
         </View>
         {/* Certificate List */}
         <SectionList
-          ref={sectionListRef}
           sections={certificates}
           keyExtractor={(item) => item.uri}
           renderItem={renderItem}
           renderSectionHeader={renderSectionHeader}
           ListEmptyComponent={<EmptyState />}
           contentContainerStyle={styles.listContent}
-        />
-        
-        <IndexedScrollBar
-          sections={certificates}
-          onIndexPress={scrollToSection}
-          sortType={sortType}
-          isDarkMode={isDarkMode}
-          sectionListRef={sectionListRef}
         />
         {/* Floating Action Button (Both Themes) */}
         <TouchableOpacity
