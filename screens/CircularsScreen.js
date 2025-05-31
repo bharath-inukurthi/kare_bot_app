@@ -17,6 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { fetch } from 'expo/fetch';
 import { useTheme } from '../context/ThemeContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Indexed ScrollBar Component
 const IndexedScrollBar = ({ sections, onIndexPress, sortType, isDarkMode, sectionListRef }) => {
@@ -465,7 +466,9 @@ const CircularsScreen = ({ navigation }) => {
     return parts.length >= 2 ? parseInt(parts[1]) : null;
   };
 
+  // Load cached data when component mounts
   useEffect(() => {
+    loadCachedData();
     return () => {
       isMounted.current = false;
       if (fetchControllerRef.current) {
@@ -473,6 +476,68 @@ const CircularsScreen = ({ navigation }) => {
       }
     };
   }, []);
+
+  // Function to load cached data
+  const loadCachedData = async () => {
+    try {
+      const cachedData = await AsyncStorage.getItem('circularsData');
+      if (cachedData) {
+        const parsedData = JSON.parse(cachedData);
+        
+        // Show loading overlay for initial items
+        setShowFullScreenLoading(true);
+        setLoading(true);
+        setInitialLoading(true);
+        loadingOpacity.setValue(1);
+        
+        // Load items iteratively
+        let currentIndex = 0;
+        const loadNextItem = () => {
+          if (currentIndex < parsedData.length) {
+            const item = parsedData[currentIndex];
+            handleNewItem(item);
+            currentIndex++;
+            
+            // Schedule next item load
+            setTimeout(loadNextItem, 10); // 10ms delay between items
+          } else {
+            // All items loaded
+            setLoading(false);
+            setInitialLoading(false);
+            
+            // After 5 items, transition from full-screen loading to side indicator
+            if (currentIndex >= 5) {
+              Animated.timing(loadingOpacity, {
+                toValue: 0,
+                duration: 300,
+                useNativeDriver: true
+              }).start(() => {
+                setShowFullScreenLoading(false);
+              });
+            }
+          }
+        };
+        
+        // Start loading items
+        loadNextItem();
+      } else {
+        // If no cached data, fetch from API
+        fetchCirculars();
+      }
+    } catch (error) {
+      console.error('Error loading cached data:', error);
+      fetchCirculars();
+    }
+  };
+
+  // Function to save data to cache
+  const saveDataToCache = async (data) => {
+    try {
+      await AsyncStorage.setItem('circularsData', JSON.stringify(data));
+    } catch (error) {
+      console.error('Error saving data to cache:', error);
+    }
+  };
 
   useEffect(() => {
     fetchCirculars();
@@ -665,7 +730,7 @@ const CircularsScreen = ({ navigation }) => {
     setLoadingProgress(0);
     setOriginalData([]);
     receivedCount.current = 0;
-    dataByGroupRef.current = {}; // Reset grouped data
+    dataByGroupRef.current = {};
 
     loadingOpacity.setValue(1);
 
@@ -695,13 +760,15 @@ const CircularsScreen = ({ navigation }) => {
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
+      let allData = [];
 
       while (true) {
         const { done, value } = await reader.read();
 
         if (done) {
-          // Stream has finished - mark loading as complete
+          // Stream has finished - save data to cache and update state
           if (isMounted.current) {
+            saveDataToCache(allData);
             setLoading(false);
             setInitialLoading(false);
             setShowFullScreenLoading(false);
@@ -716,8 +783,9 @@ const CircularsScreen = ({ navigation }) => {
           const line = lines[i].trim();
           if (line.startsWith('data:')) {
             try {
-              const jsonStr = line.slice(5).trim(); // 'data:' is 5 chars
+              const jsonStr = line.slice(5).trim();
               const json = JSON.parse(jsonStr);
+              allData.push(json);
               handleNewItem(json);
             } catch (err) {
               console.warn('Error parsing line:', line);
@@ -746,27 +814,22 @@ const CircularsScreen = ({ navigation }) => {
 
   const handleNewItem = (data) => {
     try {
-      // Increment received count
       receivedCount.current += 1;
 
-      // Log every 10th item for debugging
       if (receivedCount.current % 10 === 0) {
         console.log(`Received ${receivedCount.current} items so far`);
       }
 
-      // Ensure all required fields exist with defaults if missing
       const processedData = {
         filename: data.filename || 'Unnamed Document',
         url: data.url || '',
         date: data.date || 'Unknown Date',
-        id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`, // Add unique ID
-        ...data // Keep any other fields
+        id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+        ...data
       };
 
-      // Add to original data using a function to ensure we're working with the latest state
       setOriginalData(prev => {
         const newData = [...prev, processedData];
-        // Log every 20th item for debugging
         if (newData.length % 20 === 0) {
           console.log(`Original data now has ${newData.length} items`);
         }
@@ -782,7 +845,6 @@ const CircularsScreen = ({ navigation }) => {
 
       // After receiving 5 items, transition from full-screen loading to side indicator
       if (showFullScreenLoading && receivedCount.current >= 5) {
-        // Animate the transition
         Animated.timing(loadingOpacity, {
           toValue: 0,
           duration: 300,
@@ -792,9 +854,7 @@ const CircularsScreen = ({ navigation }) => {
         });
       }
 
-      // Force a re-process of data every 50 items to ensure UI stays updated
       if (receivedCount.current % 50 === 0) {
-        // Clear the cached data to force a full rebuild
         dataByGroupRef.current = {};
         sectionLayoutCache.current = {};
       }
@@ -867,8 +927,6 @@ const CircularsScreen = ({ navigation }) => {
       </TouchableOpacity>
     );
   }, [isDarkMode]);
-
-
 
   const scrollToSection = useCallback((sectionTitle) => {
     console.log(`Attempting to scroll to section: ${sectionTitle}`);
@@ -1183,14 +1241,7 @@ const CircularsScreen = ({ navigation }) => {
                 ? `Loaded ${loadingProgress} items...`
                 : 'Connecting to server...'}
             </Text>
-            {loadingProgress >= 5 && (
-              <Text style={[
-                styles.loadingSubtext,
-                { color: isDarkMode ? theme.textSecondary : '#64748B' }
-              ]}>
-                Almost ready...
-              </Text>
-            )}
+            
           </View>
         </Animated.View>
       )}
@@ -1218,7 +1269,6 @@ const CircularsScreen = ({ navigation }) => {
           <Ionicons name="refresh" size={20} color="#fff" />
         </TouchableOpacity>
       )}
-
 
     </SafeAreaView>
   );

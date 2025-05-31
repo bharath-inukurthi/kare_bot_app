@@ -1,0 +1,20 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+1. Memory discipline
+Begin every task with a review of [memory.md] in root if it exists. After finishing a feature, capture new or changed items inside [memory.md], including important decisions that were made, solutions to recurring problems, etc.
+
+2. Task flow via todo.md
+A todo.md must sit in the project root; if missing, ask the user to add it.
+
+Work exclusively on the first open item; large items should be split.
+Mark items complete only when the user says so and log decisions
+
+3. Single-threaded focus
+Tackle one todo item at a time, touching only code that is clearly related. Always think through ripple effects before editing.
+
+5. Iterate, don’t reinvent
+Search the codebase for existing implementations before writing new code.
+Prefer simple, incremental fixes; avoid drastic pattern or tech shifts unless all existing options are exhausted. If you must replace a pattern, remove the old one to prevent duplication.

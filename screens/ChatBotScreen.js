@@ -10,7 +10,8 @@ import {
   Platform,
   ActivityIndicator,
   SafeAreaView,
-  Animated
+  Animated,
+  Dimensions
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import MCIcon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -30,6 +31,40 @@ const BG_DARK = '#101828';
 const TEXT_DARK = '#0F172A';
 const TEXT_LIGHT = '#fff';
 const TEXT_SECONDARY = '#64748B';
+
+// Add new color constants
+const HISTORY_COLORS = {
+  light: {
+    primary: TEAL,
+    secondary: '#60A5FA', // Blue
+    accent: '#F59E0B', // Amber
+    surface: '#F8FAFC',
+    border: '#E2E8F0',
+    text: TEXT_DARK,
+    textSecondary: TEXT_SECONDARY,
+    iconBg: '#E5FAF6',
+    searchBg: '#F1F5F9',
+    closeButtonBg: '#F1F5F9',
+    cardBg: WHITE,
+    cardBorder: '#E2E8F0',
+    cardHover: '#F8FAFC',
+  },
+  dark: {
+    primary: TEAL,
+    secondary: '#60A5FA',
+    accent: '#F59E0B',
+    surface: '#1A2536',
+    border: '#2D3748',
+    text: TEXT_LIGHT,
+    textSecondary: '#94A3B8',
+    iconBg: '#1E3A8A',
+    searchBg: '#1A2536',
+    closeButtonBg: '#2D3748',
+    cardBg: '#1A2536',
+    cardBorder: '#2D3748',
+    cardHover: '#2D3748',
+  }
+};
 
 // Initial messages to show in the chat
 const INITIAL_MESSAGES = [
@@ -57,13 +92,127 @@ const SUGGESTIONS = [
   'Campus map',
 ];
 
+// Mock history data - replace with actual data in production
+const MOCK_HISTORY = [
+  { id: '1', name: 'Class Schedule Discussion', date: '2024-03-20', messages: 12 },
+  { id: '2', name: 'Library Hours Query', date: '2024-03-19', messages: 8 },
+  { id: '3', name: 'Exam Schedule Help', date: '2024-03-18', messages: 15 },
+  { id: '4', name: 'Campus Facilities Info', date: '2024-03-17', messages: 10 },
+];
+
 const ChatBotScreen = () => {
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
   const flatListRef = useRef(null);
   const navigation = useNavigation();
   const { isDarkMode, theme } = useTheme();
+
+  // Animation values
+  const slideAnim = useRef(new Animated.Value(300)).current;
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+
+  // Get theme colors
+  const themeColors = isDarkMode ? HISTORY_COLORS.dark : HISTORY_COLORS.light;
+
+  // Toggle history panel
+  const toggleHistory = () => {
+    const toValue = showHistory ? 300 : 0;
+    const opacityValue = showHistory ? 0 : 0.5;
+
+    Animated.parallel([
+      Animated.spring(slideAnim, {
+        toValue,
+        useNativeDriver: true,
+        tension: 65,
+        friction: 11
+      }),
+      Animated.timing(overlayOpacity, {
+        toValue: opacityValue,
+        duration: 200,
+        useNativeDriver: true
+      })
+    ]).start();
+
+    setShowHistory(!showHistory);
+  };
+
+  // Filter history based on search
+  const filteredHistory = MOCK_HISTORY.filter(item => 
+    item.name.toLowerCase().includes(historySearch.toLowerCase())
+  );
+
+  // Render history item with enhanced colors
+  const renderHistoryItem = ({ item }) => (
+    <TouchableOpacity
+      style={[
+        styles.historyItem,
+        { 
+          backgroundColor: themeColors.cardBg,
+          borderColor: themeColors.cardBorder,
+        }
+      ]}
+      onPress={() => {
+        toggleHistory();
+      }}
+    >
+      <View style={styles.historyItemContent}>
+        <View style={styles.historyItemHeader}>
+          <View style={[
+            styles.historyItemIconContainer,
+            { backgroundColor: themeColors.iconBg }
+          ]}>
+            <MCIcon 
+              name="chat-outline" 
+              size={18} 
+              color={themeColors.primary} 
+            />
+          </View>
+          <Text style={[
+            styles.historyItemName,
+            { color: themeColors.text }
+          ]}>
+            {item.name}
+          </Text>
+        </View>
+        <View style={styles.historyItemDetails}>
+          <View style={styles.historyItemMeta}>
+            <Icon 
+              name="access-time" 
+              size={14} 
+              color={themeColors.secondary} 
+            />
+            <Text style={[
+              styles.historyItemDate,
+              { color: themeColors.textSecondary }
+            ]}>
+              {item.date}
+            </Text>
+          </View>
+          <View style={styles.historyItemMeta}>
+            <Icon 
+              name="message" 
+              size={14} 
+              color={themeColors.accent} 
+            />
+            <Text style={[
+              styles.historyItemMessages,
+              { color: themeColors.textSecondary }
+            ]}>
+              {item.messages} messages
+            </Text>
+          </View>
+        </View>
+      </View>
+      <Icon 
+        name="chevron-right" 
+        size={20} 
+        color={themeColors.textSecondary} 
+      />
+    </TouchableOpacity>
+  );
 
   // Scroll to the bottom of the chat when new messages are added
   useEffect(() => {
@@ -189,6 +338,97 @@ const ChatBotScreen = () => {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDarkMode ? theme.background : BG_LIGHT }]}>
+      {/* History Panel with enhanced colors */}
+      <Animated.View
+        style={[
+          styles.historyPanel,
+          {
+            transform: [{ translateX: slideAnim }],
+            backgroundColor: themeColors.surface,
+            borderLeftWidth: 1,
+            borderLeftColor: themeColors.border,
+          }
+        ]}
+      >
+        <View style={[
+          styles.historyHeader,
+          { 
+            borderBottomColor: themeColors.border,
+            backgroundColor: themeColors.surface,
+          }
+        ]}>
+          <View style={styles.historyTitleContainer}>
+            <MCIcon 
+              name="history" 
+              size={24} 
+              color={themeColors.primary} 
+              style={styles.historyTitleIcon}
+            />
+            <Text style={[
+              styles.historyTitle,
+              { color: themeColors.text }
+            ]}>
+              Chat History
+            </Text>
+          </View>
+          <TouchableOpacity 
+            onPress={toggleHistory} 
+            style={[
+              styles.closeButton,
+              { backgroundColor: themeColors.closeButtonBg }
+            ]}
+          >
+            <Icon name="close" size={20} color={themeColors.text} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={[
+          styles.searchContainer,
+          { 
+            backgroundColor: themeColors.searchBg,
+            borderColor: themeColors.border,
+          }
+        ]}>
+          <Icon name="search" size={20} color={themeColors.textSecondary} />
+          <TextInput
+            style={[
+              styles.searchInput,
+              { color: themeColors.text }
+            ]}
+            placeholder="Search conversations..."
+            placeholderTextColor={themeColors.textSecondary}
+            value={historySearch}
+            onChangeText={setHistorySearch}
+          />
+        </View>
+
+        <FlatList
+          data={filteredHistory}
+          renderItem={renderHistoryItem}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.historyList}
+          showsVerticalScrollIndicator={false}
+        />
+      </Animated.View>
+
+      {/* Overlay */}
+      <Animated.View
+        style={[
+          styles.overlay,
+          {
+            opacity: overlayOpacity,
+            backgroundColor: isDarkMode ? '#000' : '#000',
+          }
+        ]}
+        pointerEvents={showHistory ? 'auto' : 'none'}
+      >
+        <TouchableOpacity
+          style={styles.overlayTouchable}
+          onPress={toggleHistory}
+          activeOpacity={1}
+        />
+      </Animated.View>
+
       {/* Header with back and history icons */}
       <View style={[
         styles.header, 
@@ -206,7 +446,7 @@ const ChatBotScreen = () => {
             Get quick answers about campus
           </Text>
         </View>
-        <TouchableOpacity style={styles.headerIcon} onPress={() => {/* show history */}}>
+        <TouchableOpacity style={styles.headerIcon} onPress={toggleHistory}>
           <Icon name="history" size={26} color={isDarkMode ? theme.text : TEXT_DARK} />
         </TouchableOpacity>
       </View>
@@ -470,6 +710,117 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     opacity: 1.0,
+  },
+  historyPanel: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 300,
+    zIndex: 1000,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: -2, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 999,
+  },
+  overlayTouchable: {
+    flex: 1,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  historyTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  historyTitleIcon: {
+    marginRight: 8,
+  },
+  historyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  closeButton: {
+    padding: 8,
+    borderRadius: 20,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    margin: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 16,
+    padding: 0,
+  },
+  historyList: {
+    padding: 16,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  historyItemContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  historyItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  historyItemIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  historyItemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
+  historyItemDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  historyItemMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  historyItemDate: {
+    fontSize: 13,
+  },
+  historyItemMessages: {
+    fontSize: 13,
   },
 });
 

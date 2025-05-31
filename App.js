@@ -12,6 +12,7 @@ import {
   View,
   LogBox,
   Image,
+  Easing,
 } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Provider as PaperProvider } from 'react-native-paper';
@@ -79,15 +80,125 @@ const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
 const MainStack = () => {
+  // Common screen options for all screens
+  const commonScreenOptions = {
+    headerShown: false,
+    animationDuration: 500,
+    animation: 'fade',
+    contentStyle: { backgroundColor: 'transparent' },
+    animationTypeForReplace: 'push',
+    cardStyle: { backgroundColor: 'transparent' },
+    cardOverlayEnabled: true,
+    gestureEnabled: true,
+    gestureDirection: 'horizontal',
+    gestureResponseDistance: {
+      horizontal: 50,
+    },
+  };
+
+  // Common card style interpolator for left pop-out screens
+  const leftPopOutInterpolator = ({ current, next, layouts }) => ({
+    cardStyle: {
+      transform: [
+        {
+          translateX: current.progress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [layouts.screen.width, 0],
+          }),
+        },
+      ],
+      opacity: current.progress,
+    },
+    overlayStyle: {
+      opacity: current.progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 0.5],
+      }),
+    },
+  });
+
+  // Common card style interpolator for right pop-out screens
+  const rightPopOutInterpolator = ({ current, next, layouts }) => ({
+    cardStyle: {
+      transform: [
+        {
+          translateX: current.progress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [-layouts.screen.width, 0],
+          }),
+        },
+      ],
+      opacity: current.progress,
+    },
+    overlayStyle: {
+      opacity: current.progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 0.5],
+      }),
+    },
+  });
+
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={commonScreenOptions}>
       <Stack.Screen name="MainTabs" component={MainApp} />
-      <Stack.Screen name="FacultyAvailabilityScreen" component={FacultyAvailabilityScreen} />
-      <Stack.Screen name="ChatBotScreen" component={ChatBotScreen} />
-      <Stack.Screen name="CircularsScreen" component={CircularsScreen} />
-      <Stack.Screen name="FormsScreen" component={FormsScreen} />
-      <Stack.Screen name="CertificatesScreen" component={CertificatesScreen} />
-      <Stack.Screen name="CGPAScreen" component={CGPAScreen} />
+      
+      {/* Left pop-out screens (slide in from right, out to left) */}
+      <Stack.Screen 
+        name="CircularsScreen" 
+        component={CircularsScreen}
+        options={{
+          ...commonScreenOptions,
+          animation: 'slide_from_right',
+          cardStyleInterpolator: leftPopOutInterpolator,
+        }}
+      />
+      <Stack.Screen 
+        name="CertificatesScreen" 
+        component={CertificatesScreen}
+        options={{
+          ...commonScreenOptions,
+          animation: 'slide_from_right',
+          cardStyleInterpolator: leftPopOutInterpolator,
+        }}
+      />
+      <Stack.Screen 
+        name="CGPAScreen" 
+        component={CGPAScreen}
+        options={{
+          ...commonScreenOptions,
+          animation: 'slide_from_right',
+          cardStyleInterpolator: leftPopOutInterpolator,
+        }}
+      />
+
+      {/* Right pop-out screens (slide in from left, out to right) */}
+      <Stack.Screen 
+        name="FacultyAvailabilityScreen" 
+        component={FacultyAvailabilityScreen}
+        options={{
+          ...commonScreenOptions,
+          animation: 'slide_from_left',
+          cardStyleInterpolator: rightPopOutInterpolator,
+        }}
+      />
+      <Stack.Screen 
+        name="FormsScreen" 
+        component={FormsScreen}
+        options={{
+          ...commonScreenOptions,
+          animation: 'slide_from_left',
+          cardStyleInterpolator: rightPopOutInterpolator,
+        }}
+      />
+      <Stack.Screen 
+        name="ChatBotScreen" 
+        component={ChatBotScreen}
+        options={{
+          ...commonScreenOptions,
+          animation: 'slide_from_left',
+          cardStyleInterpolator: rightPopOutInterpolator,
+        }}
+      />
     </Stack.Navigator>
   );
 };
@@ -150,11 +261,64 @@ const MainApp = () => {
           paddingTop: 8,
         },
         headerShown: false,
+        animationEnabled: true,
+        animationDuration: 500,
+        cardStyle: { backgroundColor: 'transparent' },
+        cardOverlayEnabled: true,
+        cardStyleInterpolator: ({ current, layouts }) => ({
+          cardStyle: {
+            transform: [
+              {
+                translateX: current.progress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [layouts.screen.width, 0],
+                }),
+              },
+            ],
+            opacity: current.progress,
+          },
+          overlayStyle: {
+            opacity: current.progress.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 0.5],
+            }),
+          },
+        }),
       })}
     >
-      <Tab.Screen name="Schedules" component={PreviewScreen} />
-      <Tab.Screen name="Tools" component={ToolsScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen 
+        name="Schedules" 
+        component={PreviewScreen}
+        options={{
+          tabBarLabel: 'Schedules',
+          tabBarLabelStyle: {
+            fontSize: 12,
+            fontWeight: '500',
+          },
+        }}
+      />
+      <Tab.Screen 
+        name="Tools" 
+        component={ToolsScreen}
+        options={{
+          tabBarLabel: 'Tools',
+          tabBarLabelStyle: {
+            fontSize: 12,
+            fontWeight: '500',
+          },
+        }}
+      />
+      <Tab.Screen 
+        name="Profile" 
+        component={ProfileScreen}
+        options={{
+          tabBarLabel: 'Profile',
+          tabBarLabelStyle: {
+            fontSize: 12,
+            fontWeight: '500',
+          },
+        }}
+      />
     </Tab.Navigator>
   );
 };
