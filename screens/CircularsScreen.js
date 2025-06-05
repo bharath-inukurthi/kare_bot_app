@@ -17,7 +17,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { fetch } from 'expo/fetch';
 import { useTheme } from '../context/ThemeContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Indexed ScrollBar Component
 const IndexedScrollBar = ({ sections, onIndexPress, sortType, isDarkMode, sectionListRef }) => {
@@ -405,22 +404,26 @@ const IndexedScrollBar = ({ sections, onIndexPress, sortType, isDarkMode, sectio
   );
 };
 
+// Add module-level variables to persist data across screen navigation
+let globalCircularsData = [];
+let hasLoadedData = false;
+
 const CircularsScreen = ({ navigation }) => {
   const [circulars, setCirculars] = useState([]);
-  const [originalData, setOriginalData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [initialLoading, setInitialLoading] = useState(true);
+  const [originalData, setOriginalData] = useState(globalCircularsData);
+  const [loading, setLoading] = useState(!hasLoadedData);
+  const [initialLoading, setInitialLoading] = useState(!hasLoadedData);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortType, setSortType] = useState('date');
   const [sortOrder, setSortOrder] = useState('desc');
-  const [showFullScreenLoading, setShowFullScreenLoading] = useState(true);
-  // Removed: const [selectedCircular, setSelectedCircular] = useState(null);
+  const [showFullScreenLoading, setShowFullScreenLoading] = useState(!hasLoadedData);
 
   // Animation value for loading indicator
   const loadingOpacity = useRef(new Animated.Value(1)).current;
 
-  // Refs
+  // Add a ref to track if we're currently processing data
+  const isProcessingRef = useRef(false);
   const isMounted = useRef(true);
   const fetchControllerRef = useRef(null);
   const receivedCount = useRef(0);
@@ -466,9 +469,20 @@ const CircularsScreen = ({ navigation }) => {
     return parts.length >= 2 ? parseInt(parts[1]) : null;
   };
 
-  // Load cached data when component mounts
+  // Initialize data loading when component mounts
   useEffect(() => {
-    loadCachedData();
+    // Only fetch if we haven't loaded data yet
+    if (!hasLoadedData) {
+      fetchCirculars();
+    } else {
+      // If we already have data, just show it
+      setLoading(false);
+      setInitialLoading(false);
+      setShowFullScreenLoading(false);
+      // Process existing data
+      processAndSortCirculars(globalCircularsData);
+    }
+
     return () => {
       isMounted.current = false;
       if (fetchControllerRef.current) {
@@ -477,121 +491,152 @@ const CircularsScreen = ({ navigation }) => {
     };
   }, []);
 
-  // Function to load cached data
-  const loadCachedData = async () => {
-    try {
-      const cachedData = await AsyncStorage.getItem('circularsData');
-      if (cachedData) {
-        const parsedData = JSON.parse(cachedData);
-        
-        // Show loading overlay for initial items
-        setShowFullScreenLoading(true);
-        setLoading(true);
-        setInitialLoading(true);
-        loadingOpacity.setValue(1);
-        
-        // Load items iteratively
-        let currentIndex = 0;
-        const loadNextItem = () => {
-          if (currentIndex < parsedData.length) {
-            const item = parsedData[currentIndex];
-            handleNewItem(item);
-            currentIndex++;
-            
-            // Schedule next item load
-            setTimeout(loadNextItem, 10); // 10ms delay between items
-          } else {
-            // All items loaded
-            setLoading(false);
-            setInitialLoading(false);
-            
-            // After 5 items, transition from full-screen loading to side indicator
-            if (currentIndex >= 5) {
-              Animated.timing(loadingOpacity, {
-                toValue: 0,
-                duration: 300,
-                useNativeDriver: true
-              }).start(() => {
-                setShowFullScreenLoading(false);
-              });
-            }
-          }
-        };
-        
-        // Start loading items
-        loadNextItem();
-      } else {
-        // If no cached data, fetch from API
-        fetchCirculars();
-      }
-    } catch (error) {
-      console.error('Error loading cached data:', error);
-      fetchCirculars();
-    }
-  };
-
-  // Function to save data to cache
-  const saveDataToCache = async (data) => {
-    try {
-      await AsyncStorage.setItem('circularsData', JSON.stringify(data));
-    } catch (error) {
-      console.error('Error saving data to cache:', error);
-    }
-  };
-
-  useEffect(() => {
-    fetchCirculars();
-  }, []);
-
-  // Memoize the processAndSortCirculars function to prevent unnecessary executions
-  const processAndSortCirculars = useCallback((data) => {
-    console.log(`Processing ${data?.length || 0} items, search: "${searchQuery}", sort: ${sortType}, order: ${sortOrder}`);
-
-    if (!data || !Array.isArray(data) || data.length === 0) {
-      console.log('No data to process, setting empty circulars');
-      setCirculars([]);
+  const fetchCirculars = async () => {
+    // If we already have data and this isn't a manual refresh, don't fetch
+    if (hasLoadedData && !loading) {
       return;
     }
 
-    // Filter based on search query
-    let filteredData = data;
-    if (searchQuery) {
-      filteredData = data.filter(item =>
-        item.filename?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.date?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      console.log(`Filtered to ${filteredData.length} items matching "${searchQuery}"`);
+    setLoading(true);
+    setInitialLoading(true);
+    setShowFullScreenLoading(true);
+    setLoadingProgress(0);
+    setOriginalData([]);
+    receivedCount.current = 0;
+    dataByGroupRef.current = {};
+
+    loadingOpacity.setValue(1);
+
+    if (fetchControllerRef.current) {
+      fetchControllerRef.current.abort();
     }
 
-    // Define month order for proper sorting
-    const monthOrder = {
-      'January': 1, 'February': 2, 'March': 3, 'April': 4,
-      'May': 5, 'June': 6, 'July': 7, 'August': 8,
-      'September': 9, 'October': 10, 'November': 11, 'December': 12
+    const controller = new AbortController();
+    fetchControllerRef.current = controller;
+
+    const apiUrl = `https://faculty-availability-api.onrender.com/stream-circulars?t=${Date.now()}`;
+
+    const fetchWithRetry = async (retryCount = 0) => {
+      try {
+        const response = await fetch(apiUrl, {
+          headers: {
+            'Accept': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+          },
+          signal: controller.signal
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`HTTP error: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let allData = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            // Stream has finished - update state and mark as loaded
+            if (isMounted.current) {
+              hasLoadedData = true;
+              globalCircularsData = allData;
+              setLoading(false);
+              setInitialLoading(false);
+              setShowFullScreenLoading(false);
+            }
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+
+          for (let i = 0; i < lines.length - 1; i++) {
+            const line = lines[i].trim();
+            if (line.startsWith('data:')) {
+              try {
+                const jsonStr = line.slice(5).trim();
+                const json = JSON.parse(jsonStr);
+                allData.push(json);
+                handleNewItem(json);
+              } catch (err) {
+                console.warn('Error parsing line:', line);
+              }
+            }
+          }
+
+          buffer = lines[lines.length - 1];
+        }
+      } catch (err) {
+        if (!controller.signal.aborted && isMounted.current) {
+          console.error('Fetch error:', err.message);
+          
+          // Only show error alert if we haven't received any data
+          if (receivedCount.current === 0) {
+            Alert.alert('Fetch Failed', `${err.message}`, [
+              { text: 'Cancel', style: 'cancel' },
+              { 
+                text: 'Retry', 
+                onPress: () => {
+                  // Don't reset hasLoadedData here, just retry the fetch
+                  fetchWithRetry(retryCount + 1);
+                }
+              }
+            ]);
+          } else {
+            // If we have some data, silently retry
+            fetchWithRetry(retryCount + 1);
+          }
+        }
+      }
     };
 
+    // Start the fetch with retry mechanism
+    fetchWithRetry();
+  };
+
+  // Memoize the processAndSortCirculars function to prevent unnecessary executions
+  const processAndSortCirculars = useCallback((data) => {
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+
     try {
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        setCirculars([]);
+        return;
+      }
+
+      // Filter based on search query
+      let filteredData = data;
+      if (searchQuery) {
+        filteredData = data.filter(item =>
+          item.filename?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          item.date?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }
+
+      // Define month order for proper sorting
+      const monthOrder = {
+        'January': 1, 'February': 2, 'March': 3, 'April': 4,
+        'May': 5, 'June': 6, 'July': 7, 'August': 8,
+        'September': 9, 'October': 10, 'November': 11, 'December': 12
+      };
+
       // Group and sort data
       if (sortType === 'date') {
-        console.log('Processing by date');
-
-        // Always rebuild the groups to ensure all data is included
         let groupedData = {};
 
         // Process each item and add to appropriate group
-        filteredData.forEach((item, index) => {
-          if (!item.date) {
-            console.log(`Item ${index} has no date:`, item.filename);
-            return;
-          }
+        filteredData.forEach((item) => {
+          if (!item.date) return;
 
           const month = getMonthFromDateString(item.date);
           const year = getYearFromDateString(item.date);
 
-          if (!month || !year) {
-            console.log(`Item ${index} has invalid date format:`, item.date);
-            return;
-          }
+          if (!month || !year) return;
 
           const key = `${year} ${month}`;
 
@@ -604,11 +649,8 @@ const CircularsScreen = ({ navigation }) => {
             };
           }
 
-          // Add to the group
           groupedData[key].data.push(item);
         });
-
-        console.log(`Created ${Object.keys(groupedData).length} date groups`);
 
         // Sort items within each month group
         Object.values(groupedData).forEach(group => {
@@ -616,7 +658,6 @@ const CircularsScreen = ({ navigation }) => {
             const dateA = parseDateString(a.date);
             const dateB = parseDateString(b.date);
 
-            // Handle null dates
             if (!dateA && !dateB) return 0;
             if (!dateA) return 1;
             if (!dateB) return -1;
@@ -628,21 +669,16 @@ const CircularsScreen = ({ navigation }) => {
         // Convert to array and sort by year first, then by month
         const result = Object.values(groupedData);
         result.sort((a, b) => {
-          // First sort by year
           if (a.year !== b.year) {
             return sortOrder === 'desc' ? b.year - a.year : a.year - b.year;
           }
-          // Then by month
           return sortOrder === 'desc'
             ? monthOrder[b.month] - monthOrder[a.month]
             : monthOrder[a.month] - monthOrder[b.month];
         });
 
-        console.log(`Setting ${result.length} date sections with total ${filteredData.length} items`);
         setCirculars(result);
       } else {
-        console.log('Processing by name');
-
         // Sort and group by name
         const sortedData = [...filteredData].sort((a, b) => {
           const nameA = a.filename?.toLowerCase() || '';
@@ -652,11 +688,8 @@ const CircularsScreen = ({ navigation }) => {
 
         // Group by first letter
         const grouped = {};
-        sortedData.forEach((item, index) => {
-          if (!item.filename) {
-            console.log(`Item ${index} has no filename`);
-            return;
-          }
+        sortedData.forEach((item) => {
+          if (!item.filename) return;
 
           const letter = item.filename[0].toUpperCase();
           if (!grouped[letter]) {
@@ -677,148 +710,29 @@ const CircularsScreen = ({ navigation }) => {
             : b.title.localeCompare(a.title);
         });
 
-        console.log(`Setting ${result.length} alphabet sections with total ${filteredData.length} items`);
         setCirculars(result);
       }
-    } catch (error) {
-      console.error('Error processing circulars:', error);
-      // Fallback to empty array in case of error
-      setCirculars([]);
+    } finally {
+      isProcessingRef.current = false;
     }
   }, [searchQuery, sortType, sortOrder]);
 
+  // Debounce the processing to prevent too frequent updates
+  const debouncedProcess = useCallback(
+    debounce((data) => {
+      processAndSortCirculars(data);
+    }, 300),
+    [processAndSortCirculars]
+  );
+
   // Run processing whenever dependencies change
   useEffect(() => {
-    console.log(`Processing data: ${originalData.length} items`);
-    processAndSortCirculars(originalData);
-  }, [originalData, searchQuery, sortType, sortOrder, processAndSortCirculars]);
-
-  // Log circulars data for debugging
-  useEffect(() => {
-    console.log(`Circulars updated: ${circulars.length} sections`);
-    circulars.forEach((section, i) => {
-      console.log(`Section ${i}: ${section.title} - ${section.data.length} items`);
-    });
-  }, [circulars]);
-
-  // Reset grouped data when sort type or order changes
-  useEffect(() => {
-    dataByGroupRef.current = {};
-    // Also reset the section layout cache
-    sectionLayoutCache.current = {};
-
-    // Reset scroll position after a short delay to allow re-rendering
-    setTimeout(() => {
-      if (sectionListRef.current && circulars.length > 0) {
-        try {
-          sectionListRef.current.scrollToLocation({
-            sectionIndex: 0,
-            itemIndex: 0,
-            animated: false
-          });
-        } catch (error) {
-          console.error('Error resetting scroll position:', error);
-        }
-      }
-    }, 300);
-  }, [sortType, sortOrder, searchQuery, circulars.length]);
-
-  const fetchCirculars = async () => {
-    setLoading(true);
-    setInitialLoading(true);
-    setShowFullScreenLoading(true);
-    setLoadingProgress(0);
-    setOriginalData([]);
-    receivedCount.current = 0;
-    dataByGroupRef.current = {};
-
-    loadingOpacity.setValue(1);
-
-    if (fetchControllerRef.current) {
-      fetchControllerRef.current.abort();
-    }
-
-    const controller = new AbortController();
-    fetchControllerRef.current = controller;
-
-    const apiUrl = `https://faculty-availability-api.onrender.com/stream-circulars?t=${Date.now()}`;
-
-    try {
-      const response = await fetch(apiUrl, {
-        headers: {
-          'Accept': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive'
-        },
-        signal: controller.signal
-      });
-
-      if (!response.ok || !response.body) {
-        throw new Error(`HTTP error: ${response.status}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
-      let allData = [];
-
-      while (true) {
-        const { done, value } = await reader.read();
-
-        if (done) {
-          // Stream has finished - save data to cache and update state
-          if (isMounted.current) {
-            saveDataToCache(allData);
-            setLoading(false);
-            setInitialLoading(false);
-            setShowFullScreenLoading(false);
-          }
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-
-        for (let i = 0; i < lines.length - 1; i++) {
-          const line = lines[i].trim();
-          if (line.startsWith('data:')) {
-            try {
-              const jsonStr = line.slice(5).trim();
-              const json = JSON.parse(jsonStr);
-              allData.push(json);
-              handleNewItem(json);
-            } catch (err) {
-              console.warn('Error parsing line:', line);
-            }
-          }
-        }
-
-        buffer = lines[lines.length - 1];
-      }
-    } catch (err) {
-      if (!controller.signal.aborted && isMounted.current) {
-        console.error('Fetch error:', err.message);
-        setLoading(false);
-        setInitialLoading(false);
-        setShowFullScreenLoading(false);
-
-        if (receivedCount.current === 0) {
-          Alert.alert('Fetch Failed', `${err.message}`, [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Retry', onPress: () => fetchCirculars() }
-          ]);
-        }
-      }
-    }
-  };
+    debouncedProcess(originalData);
+  }, [originalData, searchQuery, sortType, sortOrder, debouncedProcess]);
 
   const handleNewItem = (data) => {
     try {
       receivedCount.current += 1;
-
-      if (receivedCount.current % 10 === 0) {
-        console.log(`Received ${receivedCount.current} items so far`);
-      }
 
       const processedData = {
         filename: data.filename || 'Unnamed Document',
@@ -830,9 +744,6 @@ const CircularsScreen = ({ navigation }) => {
 
       setOriginalData(prev => {
         const newData = [...prev, processedData];
-        if (newData.length % 20 === 0) {
-          console.log(`Original data now has ${newData.length} items`);
-        }
         return newData;
       });
 
@@ -852,11 +763,6 @@ const CircularsScreen = ({ navigation }) => {
         }).start(() => {
           setShowFullScreenLoading(false);
         });
-      }
-
-      if (receivedCount.current % 50 === 0) {
-        dataByGroupRef.current = {};
-        sectionLayoutCache.current = {};
       }
     } catch (error) {
       console.error('Error handling new item:', error);
@@ -1197,17 +1103,10 @@ const CircularsScreen = ({ navigation }) => {
           windowSize={21}
           removeClippedSubviews={false}
           updateCellsBatchingPeriod={30}
-          onEndReachedThreshold={0.5}
-          onEndReached={() => {
-            console.log('End reached, forcing refresh');
-            // Force a refresh when user scrolls to the end
-            setCirculars([...circulars]);
-          }}
           maintainVisibleContentPosition={{
             minIndexForVisible: 0,
             autoscrollToTopThreshold: 10
           }}
-          // Add these props to improve performance
           disableVirtualization={false}
           legacyImplementation={false}
         />
@@ -1264,7 +1163,11 @@ const CircularsScreen = ({ navigation }) => {
       {!loading && originalData.length > 0 && (
         <TouchableOpacity
           style={styles.refreshButton}
-          onPress={fetchCirculars}
+          onPress={() => {
+            hasLoadedData = false; // Reset the flag to allow refresh
+            globalCircularsData = []; // Clear global data
+            fetchCirculars();
+          }}
         >
           <Ionicons name="refresh" size={20} color="#fff" />
         </TouchableOpacity>
@@ -1521,5 +1424,18 @@ const styles = StyleSheet.create({
   },
 
 });
+
+// Add debounce utility function
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
 
 export default CircularsScreen;

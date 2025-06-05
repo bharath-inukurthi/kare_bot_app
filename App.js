@@ -29,6 +29,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import LottieView from 'lottie-react-native';
 import supabase from './lib/supabase';
+import { v4 as uuidv4 } from 'uuid';
 
 // Import screens
 import FacultyAvailabilityScreen from './screens/FacultyAvailabilityScreen';
@@ -414,9 +415,23 @@ const App = () => {
             setUser(null);
           } else {
             setUser(session.user);
+            
+            // Store Supabase user ID as UUID
+            try {
+              await AsyncStorage.setItem('currentUserUuid', session.user.id);
+              console.log('Stored Supabase user ID as UUID:', session.user.id);
+            } catch (error) {
+              console.error('Error storing user ID:', error);
+            }
           }
         } else {
           setUser(null);
+          // Clear the current user UUID when signed out
+          try {
+            await AsyncStorage.removeItem('currentUserUuid');
+          } catch (error) {
+            console.error('Error clearing user UUID during sign out:', error);
+          }
         }
 
         if (initializing) setInitializing(false);
@@ -443,6 +458,13 @@ const App = () => {
           setUser(null);
         } else {
           setUser(session.user);
+          // Store Supabase user ID as UUID for initial session
+          try {
+            await AsyncStorage.setItem('currentUserUuid', session.user.id);
+            console.log('Stored Supabase user ID as UUID for initial session:', session.user.id);
+          } catch (error) {
+            console.error('Error storing user ID for initial session:', error);
+          }
         }
       } else {
         setUser(null);
@@ -498,7 +520,6 @@ const App = () => {
         const { data, error } = await supabase.auth.signInWithIdToken({
           provider: 'google',
           token: response.params.id_token,
-          // nonce: 'random_nonce' // Supabase handles nonce automatically with signInWithIdToken if needed by provider config
         });
 
         console.log('Supabase signInWithIdToken response:', { data, error });
@@ -507,21 +528,28 @@ const App = () => {
           throw error;
         }
 
+        // Store Supabase user ID as UUID
+        if (data?.user) {
+          try {
+            await AsyncStorage.setItem('currentUserUuid', data.user.id);
+            console.log('Stored Supabase user ID as UUID after Google sign in:', data.user.id);
+          } catch (error) {
+            console.error('Error storing user ID after Google sign in:', error);
+          }
+        }
+
         // setUser will be handled by the onAuthStateChange listener
-        // console.log('ID token sign-in completed successfully, user should be set by onAuthStateChange');
-        // If you need to immediately verify session (though onAuthStateChange should cover it):
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         console.log('Session after ID token sign-in attempt:', { session, sessionError });
 
         if (sessionError) {
-          // Potentially log this, but onAuthStateChange is the primary mechanism
           console.warn('Error fetching session immediately after sign-in:', sessionError);
         }
 
-        if (!session && !error) { // if no error from signInWithIdToken but no session yet
-             console.log('No session immediately available, relying on onAuthStateChange.');
+        if (!session && !error) {
+          console.log('No session immediately available, relying on onAuthStateChange.');
         } else if (session) {
-            console.log('Session established.');
+          console.log('Session established.');
         }
 
       } catch (error) {
@@ -641,6 +669,14 @@ const App = () => {
             throw signInError;
           }
 
+          // Store Supabase user ID as UUID
+          try {
+            await AsyncStorage.setItem('currentUserUuid', signInData.user.id);
+            console.log('Stored Supabase user ID as UUID for test user:', signInData.user.id);
+          } catch (error) {
+            console.error('Error storing test user ID:', error);
+          }
+
           console.log('Signed in with test user');
           setUser(signInData.user);
           showAlert(
@@ -651,6 +687,14 @@ const App = () => {
           throw error;
         }
       } else {
+        // Store Supabase user ID as UUID for new test user
+        try {
+          await AsyncStorage.setItem('currentUserUuid', data.user.id);
+          console.log('Stored Supabase user ID as UUID for new test user:', data.user.id);
+        } catch (error) {
+          console.error('Error storing new test user ID:', error);
+        }
+
         console.log('Test user created successfully');
         setUser(data.user);
         showAlert(

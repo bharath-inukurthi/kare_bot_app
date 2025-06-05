@@ -82,7 +82,7 @@ const Card = ({ children, style, theme }) => (
 );
 
 // Custom Dropdown component
-const Dropdown = ({ label, value, options, onSelect, searchable = false, icon, theme }) => {
+const Dropdown = ({ label, value, options, onSelect, searchable = false, icon, theme, isLoading = false }) => {
   const [visible, setVisible] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [filteredOptions, setFilteredOptions] = useState([]);
@@ -224,7 +224,16 @@ const Dropdown = ({ label, value, options, onSelect, searchable = false, icon, t
               )}
               
               <ScrollView style={[styles.optionsList, { maxHeight: 300 }]} showsVerticalScrollIndicator={false}>
-                {filteredOptions.length > 0 ? (
+                {isLoading ? (
+                  <View style={[styles.loadingContainer, { padding: 24 }]}>
+                    <ActivityIndicator size="large" color={theme.primary} />
+                    <Text style={[styles.loadingText, { 
+                      color: theme.textSecondary,
+                      marginLeft: 12,
+                      fontSize: 15
+                    }]}>Loading {label.toLowerCase()}...</Text>
+                  </View>
+                ) : filteredOptions.length > 0 ? (
                   filteredOptions.map((option, index) => (
                     <TouchableOpacity 
                       key={index}
@@ -499,6 +508,7 @@ const FacultyAvailabilityScreen = () => {
             searchable={true}
             icon={<MaterialIcons name="account-circle" size={20} color={theme.success} />}
             theme={theme}
+            isLoading={isLoadingFaculty}
           />
           <Dropdown
             label="Day"

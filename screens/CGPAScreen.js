@@ -373,7 +373,7 @@ const CGPAScreen = ({ navigation }) => {
         duration={3000}
         style={[
           styles.snackbar,
-          { backgroundColor: isDarkMode ? '#1F2937' : '#1A1A1A' }
+          { backgroundColor: isDarkMode ?  '#EF4444' : '#FEE2E2',"text":isDarkMode ?  '#FEE2E2' : '#EF4444'}
         ]}
         action={{
           label: 'Dismiss',
