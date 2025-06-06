@@ -13,7 +13,8 @@ import {
   Animated,
   Dimensions,
   Linking,
-  Image
+  Image,
+  Alert
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import MCIcon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -22,6 +23,7 @@ import { useTheme } from '../context/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { v4 as uuidv4 } from 'uuid';
 import Markdown from 'react-native-markdown-display';
+import supabase from '../lib/supabase';
 
 // API Configuration
 const API_BASE_URL = 'https://kare-chat-bot.onrender.com';
@@ -127,6 +129,43 @@ const getMessages = async (sessionId) => {
   }
 };
 
+// Add new API functions for metadata
+const updateSessionMetadata = async (sessionId, metadata) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/session/${sessionId}/metadata/update`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ meta_data: metadata }),
+    });
+    console.log(JSON.stringify({ meta_data: metadata }));
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error updating session metadata:', error);
+    throw error;
+  }
+};
+
+const getSessionMetadata = async (sessionId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/session/${sessionId}/metadata`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching session metadata:', error);
+    throw error;
+  }
+};
+
 // WebSocket connection for real-time chat
 const connectWebSocket = (onMessage) => {
   const ws = new WebSocket('wss://kare-chat-bot.onrender.com/ws/chat');
@@ -192,6 +231,11 @@ const HISTORY_COLORS = {
     inputBg: '#F1F5F9',
     headerBg: '#FFFFFF',
     headerBorder: '#E2E8F0',
+    sourcesBg: '#F8FAFC',
+    sourcesBorder: '#E2E8F0',
+    sourcesHeaderBg: '#F1F5F9',
+    sourcesText: '#0F172A',
+    sourcesIconBg: '#E5FAF6',
   },
   dark: {
     primary: TEAL,
@@ -213,6 +257,11 @@ const HISTORY_COLORS = {
     inputBg: '#1A2536',
     headerBg: '#1A2536',
     headerBorder: '#2D3748',
+    sourcesBg: '#1A2536',
+    sourcesBorder: '#2D3748',
+    sourcesHeaderBg: '#2D3748',
+    sourcesText: '#E2E8F0',
+    sourcesIconBg: '#1E3A8A',
   }
 };
 
@@ -236,6 +285,116 @@ const MOCK_HISTORY = [
   { id: '3', name: 'Exam Schedule Help', date: '2024-03-18', messages: 15 },
   { id: '4', name: 'Campus Facilities Info', date: '2024-03-17', messages: 10 },
 ];
+
+// Add these new functions after the existing API functions
+const signInWithGoogle = async () => {
+  try {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        scopes: 'https://www.googleapis.com/auth/gmail.readonly',
+      },
+    });
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error signing in with Google:', error);
+    throw error;
+  }
+};
+
+const searchGmailMessages = async (searchQuery) => {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const accessToken = data.session?.provider_token;
+    
+    if (!accessToken) {
+      throw new Error('No access token available');
+    }
+
+    // Parse the search query if it's a JSON string
+    let searchParams;
+    try {
+      searchParams = typeof searchQuery === 'string' ? JSON.parse(searchQuery) : searchQuery;
+    } catch (e) {
+      // If not JSON, use the original search query
+      searchParams = { answer: { subject: searchQuery } };
+    }
+
+    // Extract search parameters from the bot response
+    const { answer } = searchParams;
+    if (!answer) {
+      throw new Error('Invalid search parameters');
+    }
+
+    // Construct Gmail search query
+    const queryParts = [];
+    
+    if (answer.after_date) {
+      const afterDate = answer.after_date.replace(/-/g, '/');
+      queryParts.push(`after:${afterDate}`);
+    }
+    
+    if (answer.before_date) {
+      const beforeDate = answer.before_date.replace(/-/g, '/');
+      queryParts.push(`before:${beforeDate}`);
+    }
+    
+    if (answer.received_by) {
+      queryParts.push(`from:${answer.received_by}`);
+    }
+    
+    if (answer.subject) {
+      queryParts.push(`subject:"${answer.subject}"`);
+    }
+
+    const finalQuery = queryParts.join(' ');
+    console.log('Constructed Gmail search query:', finalQuery);
+
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(finalQuery)}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+
+    if (!res.ok) {
+      throw new Error('Failed to fetch Gmail messages');
+    }
+
+    const messages = await res.json();
+    return messages?.messages || [];
+  } catch (error) {
+    console.error('Error searching Gmail messages:', error);
+    throw error;
+  }
+};
+
+const buildGmailLink = (messageId) => {
+  return `https://mail.google.com/mail/u/0/#all/${messageId}`;
+};
+
+// Add this new function after the existing API functions
+const fetchGmailMessage = async (accessToken, messageId) => {
+  try {
+    const response = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch Gmail message');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching Gmail message:', error);
+    throw error;
+  }
+};
 
 const ChatBotScreen = () => {
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
@@ -275,6 +434,10 @@ const ChatBotScreen = () => {
 
   // Add new state for new conversation
   const [isNewConversation, setIsNewConversation] = useState(false);
+
+  // Add this new state variable
+  const [isGmailAuthenticated, setIsGmailAuthenticated] = useState(false);
+  const [gmailMessages, setGmailMessages] = useState([]);
 
   // Initialize user UUID and load last session
   useEffect(() => {
@@ -357,7 +520,7 @@ const ChatBotScreen = () => {
   const loadSessionMessages = async (sessionId) => {
     try {
       const sessionMessages = await getMessages(sessionId);
-      // Remove sorting to maintain original order
+      
       const formattedMessages = sessionMessages.map(msg => ({
         text: msg.content,
         sender: msg.role === 'user' ? 'user' : 'ai',
@@ -390,12 +553,16 @@ const ChatBotScreen = () => {
           setCurrentTool(null);
           setIsStreaming(false);
           
-          // Extract citations if available
+          // Extract citation data from bot response
           const citationData = {
             source: data.answer.source,
             subject: data.answer.subject,
             received_on: data.answer.received_on,
-            received_by: data.answer.received_by
+            received_by: data.answer.received_by,
+            after_date: data.answer.after_date,
+            before_date: data.answer.before_date,
+            has_attachment: data.answer.has_attachment,
+            attachments: data.answer.has_attachment === 1 ? data.answer.attachments : []
           };
 
           // Add to session sources if it's a new source
@@ -406,17 +573,39 @@ const ChatBotScreen = () => {
                          source.received_on === citationData.received_on
               );
               if (!sourceExists) {
-                return [...prevSources, citationData];
+                const newSources = [...prevSources, citationData];
+                
+                // Update metadata with new sources
+                if (sessionIdRef.current) {
+                  updateSessionMetadata(sessionIdRef.current, citationData)
+                    .catch(error => console.error('Error updating session metadata:', error));
+                }
+                
+                return newSources;
               }
               return prevSources;
             });
+
+            // If the source is Mail, construct and execute Gmail search
+            if (citationData.source === 'Mail' && citationData.subject) {
+              const searchQuery = {
+                answer: {
+                  after_date: citationData.after_date,
+                  before_date: citationData.before_date,
+                  received_by: citationData.received_by,
+                  subject: citationData.subject
+                }
+              };
+              handleGmailSearch(searchQuery);
+            }
           }
           
           const finalText = streamingText || data.answer.answer;
           const botMessage = {
-            id: Date.now().toString(),
+            id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             text: finalText,
             sender: 'ai',
+            citation: citationData
           };
           
           setMessages(prevMessages => [...prevMessages, botMessage]);
@@ -482,16 +671,69 @@ const ChatBotScreen = () => {
     }
   }, [currentTool]);
 
+  // Add this new useEffect for Gmail authentication
+  useEffect(() => {
+    const checkGmailAuth = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        setIsGmailAuthenticated(!!data.session?.provider_token);
+      } catch (error) {
+        console.error('Error checking Gmail auth:', error);
+        setIsGmailAuthenticated(false);
+      }
+    };
+
+    checkGmailAuth();
+  }, []);
+
+  // Add this new function to handle Gmail authentication
+  const handleGmailAuth = async () => {
+    try {
+      await signInWithGoogle();
+      setIsGmailAuthenticated(true);
+      showSnackbar('Successfully connected to Gmail', 'success');
+    } catch (error) {
+      console.error('Error authenticating with Gmail:', error);
+      showSnackbar('Failed to connect to Gmail', 'error');
+    }
+  };
+
+  // Add this new function to handle Gmail message search
+  const handleGmailSearch = async (query) => {
+    try {
+      const messages = await searchGmailMessages(query);
+      setGmailMessages(messages);
+      
+      if (messages.length > 0) {
+        const gmailLink = buildGmailLink(messages[0].id);
+        Linking.openURL(gmailLink);
+      } else {
+        showSnackbar('No matching messages found', 'error');
+      }
+    } catch (error) {
+      console.error('Error searching Gmail:', error);
+      showSnackbar('Failed to search Gmail messages', 'error');
+    }
+  };
+
   // Function to handle sending a message
   const handleSendMessage = async () => {
     if (inputText.trim() === '' || !userUuid) return;
 
     try {
+      // Check if the message is a Gmail search request
+      if (inputText.toLowerCase().includes('search gmail') || inputText.toLowerCase().includes('find email')) {
+        if (!isGmailAuthenticated) {
+          await handleGmailAuth();
+        }
+        await handleGmailSearch(inputText);
+      }
+
       let sessionId = currentSessionId;
       
-      // Create new session only if this is the first message and no session exists
-      if (!sessionId && !isNewConversation) {
-        console.log('Creating new session for first message:', inputText.trim());
+      // Create new session if this is the first message or if we're starting a new conversation
+      if (!sessionId || isNewConversation) {
+        console.log('Creating new session for message:', inputText.trim());
         const sessionData = await createSession(userUuid, inputText.trim());
         if (!sessionData || !sessionData.session_id) {
           throw new Error('Invalid session data received');
@@ -499,8 +741,9 @@ const ChatBotScreen = () => {
         sessionId = sessionData.session_id;
         setCurrentSessionId(sessionId);
         sessionIdRef.current = sessionId;
+        setIsNewConversation(false); // Reset the new conversation flag
         console.log('New session created with ID:', sessionId);
-      } else if (sessionId) {
+      } else {
         // Add user message to the existing session
         await addMessage(sessionId, 'user', inputText.trim());
         console.log('User message added to session:', sessionId);
@@ -508,7 +751,7 @@ const ChatBotScreen = () => {
 
       // Add user message to UI
       const userMessage = {
-        id: Date.now().toString(),
+        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         text: inputText.trim(),
         sender: 'user',
       };
@@ -528,7 +771,7 @@ const ChatBotScreen = () => {
         console.error('WebSocket is not connected');
         // Add error message
         const errorMessage = {
-          id: Date.now().toString(),
+          id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           text: 'Sorry, there was an error processing your message. Please try again.',
           sender: 'ai',
         };
@@ -538,13 +781,7 @@ const ChatBotScreen = () => {
     } catch (error) {
       console.error('Error in handleSendMessage:', error);
       setIsTyping(false);
-      // Add error message
-      const errorMessage = {
-        id: Date.now().toString(),
-        text: 'Sorry, there was an error processing your message. Please try again.',
-        sender: 'ai',
-      };
-      setMessages(prevMessages => [...prevMessages, errorMessage]);
+      showSnackbar('Failed to process message', 'error');
     }
   };
 
@@ -561,29 +798,30 @@ const ChatBotScreen = () => {
         { 
           backgroundColor: themeColors.cardBg,
           borderColor: themeColors.cardBorder,
+          borderLeftWidth: item.session_id === currentSessionId ? 6 : 1,
+          borderLeftColor: item.session_id === currentSessionId ? themeColors.primary : themeColors.cardBorder,
+          paddingLeft: item.session_id === currentSessionId ? 16 : 12,
         }
       ]}
       onPress={() => loadSessionMessages(item.session_id)}
     >
+      {item.session_id === currentSessionId && (
+        <View style={[
+          styles.currentSessionIndicator,
+          { backgroundColor: themeColors.primary }
+        ]} />
+      )}
       <View style={styles.historyItemContent}>
-        <View style={styles.historyItemHeader}>
-          <View style={[
-            styles.historyItemIconContainer,
-            { backgroundColor: themeColors.iconBg }
-          ]}>
-            <MCIcon 
-              name="chat-outline" 
-              size={18} 
-              color={themeColors.primary} 
-            />
-          </View>
-          <Text style={[
-            styles.historyItemName,
-            { color: themeColors.text }
-          ]}>
-            {item.session_title}
-          </Text>
-        </View>
+        <Text style={[
+          styles.historyItemName,
+          { 
+            color: themeColors.text,
+            fontWeight: item.session_id === currentSessionId ? '700' : '500',
+            fontSize: item.session_id === currentSessionId ? 16 : 15,
+          }
+        ]}>
+          {item.session_title}
+        </Text>
       </View>
       <Icon 
         name="chevron-right" 
@@ -607,112 +845,116 @@ const ChatBotScreen = () => {
     }
   };
 
-  // Update the renderMessage function
+  // Update the renderMessage function to fix syntax and styling
   const renderMessage = ({ item }) => {
     const isUser = item.sender === 'user';
+    
     return (
       <View style={[
         styles.messageRow,
         isUser ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }
       ]}>
-        {!isUser && (
-          <View style={[styles.botIconCircle, { backgroundColor: themeColors.primary }]}> 
-            <MCIcon name="robot-outline" size={22} color={WHITE} />
-          </View>
-        )}
         <View style={[
           isUser ? styles.userBubble : styles.messageBubble,
           isUser
-            ? { backgroundColor: themeColors.userMessageBg, marginLeft: 40 }
+            ? { 
+                backgroundColor: themeColors.userMessageBg,
+                maxWidth: '70%'
+              }
             : { 
                 backgroundColor: themeColors.botMessageBg, 
-                borderBottomLeftRadius: 4, 
-                marginRight: 8 
+                borderBottomLeftRadius: 4,
+                borderBottomRightRadius: 20,
+                maxWidth: '100%',
+                paddingHorizontal: 8,
+                paddingVertical: 8,
+                elevation: 0
               }
         ]}>
           {!isUser ? (
-            <Markdown
-              style={{
-                body: { 
-                  color: themeColors.text,
-                  fontSize: 16,
-                  lineHeight: 22
-                },
-                code_inline: { 
-                  backgroundColor: themeColors.searchBg,
-                  padding: 4,
-                  borderRadius: 4,
-                  fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
-                },
-                code_block: {
-                  backgroundColor: themeColors.searchBg,
-                  padding: 8,
-                  borderRadius: 4,
-                  fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
-                },
-                paragraph: {
-                  marginVertical: 4
-                },
-                link: {
-                  color: themeColors.primary,
-                  textDecorationLine: 'underline'
-                }
-              }}
-              onLinkPress={handleLinkPress}
-            >
-              {item.text}
-            </Markdown>
+            <View style={styles.markdownContainer}>
+              <Markdown
+                style={{
+                  body: { 
+                    color: themeColors.text,
+                    fontSize: 16,
+                    lineHeight: 22,
+                    textAlign: 'left'
+                  },
+                  code_inline: { 
+                    backgroundColor: themeColors.searchBg,
+                    padding: 4,
+                    borderRadius: 4,
+                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
+                  },
+                  code_block: {
+                    backgroundColor: themeColors.searchBg,
+                    padding: 8,
+                    borderRadius: 4,
+                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
+                  },
+                  paragraph: {
+                    marginVertical: 4
+                  },
+                  link: {
+                    color: themeColors.primary,
+                    textDecorationLine: 'underline'
+                  },
+                  table: {
+                    borderWidth: 1,
+                    borderColor: themeColors.border
+                  },
+                  tr: {
+                    borderBottomWidth: 1,
+                    borderBottomColor: themeColors.border
+                  },
+                  th: {
+                    padding: 8,
+                    borderRightWidth: 1,
+                    borderRightColor: themeColors.border
+                  },
+                  td: {
+                    padding: 8,
+                    borderRightWidth: 1,
+                    borderRightColor: themeColors.border
+                  }
+                }}
+                onLinkPress={handleLinkPress}
+              >
+                {item.text}
+              </Markdown>
+            </View>
           ) : (
-            <Text style={[
-              styles.messageText,
-              { color: WHITE }
-            ]}>
+            <Text 
+              style={[
+                styles.messageText,
+                { color: WHITE }
+              ]}
+              selectable={true}
+            >
               {item.text}
             </Text>
-          )}
-          {!isUser && item.citation && (
-            <TouchableOpacity 
-              style={[styles.citationContainer, { backgroundColor: themeColors.searchBg }]}
-              onPress={() => handleSourceClick(item.citation)}
-            >
-              <View style={styles.citationHeader}>
-                <Icon name="info-outline" size={16} color={themeColors.textSecondary} />
-                <Text style={[styles.citationText, { color: themeColors.textSecondary }]}>
-                  Source: {item.citation.source}
-                </Text>
-              </View>
-              {item.citation.subject && (
-                <Text style={[styles.citationDetail, { color: themeColors.textSecondary }]}>
-                  Subject: {item.citation.subject}
-                </Text>
-              )}
-              {item.citation.received_on && (
-                <Text style={[styles.citationDetail, { color: themeColors.textSecondary }]}>
-                  Received: {item.citation.received_on}
-                </Text>
-              )}
-            </TouchableOpacity>
           )}
         </View>
       </View>
     );
   };
 
-  // Render the bot typing indicator with current tool
+  // Update the renderTypingIndicator to ensure text selection works
   const renderTypingIndicator = () => {
     if (!isTyping && !isStreaming) return null;
 
     return (
       <View style={[styles.messageRow, { justifyContent: 'flex-start' }]}> 
-        <View style={[styles.botIconCircle, { backgroundColor: themeColors.primary }]}> 
-          <MCIcon name="robot-outline" size={22} color={WHITE} />
-        </View>
         <View style={[
           styles.messageBubble, 
           { 
             backgroundColor: themeColors.cardBg, 
-            borderBottomLeftRadius: 4, 
-            marginRight: 8 
+            borderBottomLeftRadius: 4,
+            borderBottomRightRadius: 20,
+            maxWidth: '100%',
+            paddingHorizontal: 8,
+            paddingVertical: 8
           }
         ]}> 
           {currentTool ? (
@@ -728,46 +970,75 @@ const ChatBotScreen = () => {
                   },
                 ]}
               >
-                <Text style={[
-                  styles.toolLoadingText,
-                  { color: themeColors.text }
-                ]}>
+                <Text 
+                  style={[
+                    styles.toolLoadingText,
+                    { 
+                      color: themeColors.text,
+                      userSelect: 'text',
+                      selectable: true
+                    }
+                  ]}
+                  selectable={true}
+                  textSelectable={true}
+                >
                   Using {currentTool.replace(/_/g, ' ')}...
                 </Text>
               </Animated.View>
             </View>
           ) : isStreaming ? (
-            <Markdown
-              style={{
-                body: { 
-                  color: themeColors.text,
-                  fontSize: 16,
-                  lineHeight: 22
-                },
-                code_inline: { 
-                  backgroundColor: themeColors.searchBg,
-                  padding: 4,
-                  borderRadius: 4,
-                  fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
-                },
-                code_block: {
-                  backgroundColor: themeColors.searchBg,
-                  padding: 8,
-                  borderRadius: 4,
-                  fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
-                },
-                paragraph: {
-                  marginVertical: 4
-                },
-                link: {
-                  color: themeColors.primary,
-                  textDecorationLine: 'underline'
-                }
-              }}
-              onLinkPress={handleLinkPress}
-            >
-              {streamingText}
-            </Markdown>
+            <View style={styles.markdownContainer}>
+              <Markdown
+                style={{
+                  body: { 
+                    color: themeColors.text,
+                    fontSize: 16,
+                    lineHeight: 22,
+                    textAlign: 'left'
+                  },
+                  code_inline: { 
+                    backgroundColor: themeColors.searchBg,
+                    padding: 4,
+                    borderRadius: 4,
+                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
+                  },
+                  code_block: {
+                    backgroundColor: themeColors.searchBg,
+                    padding: 8,
+                    borderRadius: 4,
+                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
+                  },
+                  paragraph: {
+                    marginVertical: 4
+                  },
+                  link: {
+                    color: themeColors.primary,
+                    textDecorationLine: 'underline'
+                  },
+                  table: {
+                    borderWidth: 1,
+                    borderColor: themeColors.border
+                  },
+                  tr: {
+                    borderBottomWidth: 1,
+                    borderBottomColor: themeColors.border
+                  },
+                  th: {
+                    padding: 8,
+                    borderRightWidth: 1,
+                    borderRightColor: themeColors.border
+                  },
+                  td: {
+                    padding: 8,
+                    borderRightWidth: 1,
+                    borderRightColor: themeColors.border
+                  }
+                }}
+                onLinkPress={handleLinkPress}
+              >
+                {streamingText}
+              </Markdown>
+            </View>
           ) : (
             <View style={styles.typingDotsContainer}>
               <View style={[styles.typingDot, { backgroundColor: themeColors.primary }]} />
@@ -787,29 +1058,119 @@ const ChatBotScreen = () => {
   // Height of the bottom bar (suggestions + input bar)
   const BOTTOM_BAR_HEIGHT = 110;
 
-  // Add function to handle source click
-  const handleSourceClick = (citation) => {
+  // Update the handleSourceClick function
+  const handleSourceClick = async (citation) => {
     if (citation.source === 'Mail') {
-      const email = citation.received_by.match(/<([^>]+)>/)?.[1] || '';
-      const searchUrl = `https://mail.google.com/mail/u/0/#search/from:${email}+subject:"${citation.subject}"+after:${citation.received_on}+before:${citation.received_on}`;
-      Linking.openURL(searchUrl);
+      try {
+        // Get the current session
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.provider_token;
+
+        if (!accessToken) {
+          console.error('No access token available');
+          return;
+        }
+
+        // Construct Gmail search query
+        const queryParts = [];
+        
+        if (citation.after_date) {
+          const afterDate = citation.after_date.replace(/-/g, '/');
+          queryParts.push(`after:${afterDate}`);
+        }
+        
+        if (citation.before_date) {
+          const beforeDate = citation.before_date.replace(/-/g, '/');
+          queryParts.push(`before:${beforeDate}`);
+        }
+        
+        if (citation.received_by) {
+          queryParts.push(`from:${citation.received_by}`);
+        }
+        
+        if (citation.subject) {
+          queryParts.push(`subject:"${citation.subject}"`);
+        }
+
+        const finalQuery = queryParts.join(' ');
+        console.log('Constructed Gmail search query:', finalQuery);
+
+        // Search for messages
+        const response = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(finalQuery)}`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to search Gmail messages');
+        }
+
+        const searchResult = await response.json();
+        const messages = searchResult.messages || [];
+
+        if (messages.length > 0) {
+          // Get the first matching message
+          const message = await fetchGmailMessage(accessToken, messages[0].id);
+          
+          // Construct Gmail URL with message ID
+          const gmailUrl = `https://mail.google.com/mail/u/0/#inbox/${message.id}`;
+          console.log('Opening Gmail URL:', gmailUrl);
+          
+          // Open the Gmail message in the default browser
+          await Linking.openURL(gmailUrl);
+        } else {
+          console.log('No matching messages found');
+          // Show a message to the user that no matching emails were found
+          Alert.alert(
+            'No Messages Found',
+            'No matching emails were found in your Gmail account.',
+            [{ text: 'OK' }]
+          );
+        }
+      } catch (error) {
+        console.error('Error handling Gmail source click:', error);
+        Alert.alert(
+          'Error',
+          'Failed to open the email. Please try again.',
+          [{ text: 'OK' }]
+        );
+      }
     }
   };
 
-  // Update renderSessionSources function
+  // Update renderSessionSources function to include attachments
   const renderSessionSources = () => {
     if (sessionSources.length === 0) return null;
 
     return (
-      <View style={styles.sessionSourcesContainer}>
+      <View style={[
+        styles.sessionSourcesContainer,
+        { 
+          backgroundColor: themeColors.sourcesBg,
+          borderColor: themeColors.sourcesBorder,
+        }
+      ]}>
         <TouchableOpacity 
-          style={styles.sessionSourcesHeader}
+          style={[
+            styles.sessionSourcesHeader,
+            { backgroundColor: themeColors.sourcesHeaderBg }
+          ]}
           onPress={() => setIsSourcesExpanded(!isSourcesExpanded)}
         >
           <View style={styles.sessionSourcesTitleContainer}>
-            <Icon name="info-outline" size={20} color={themeColors.textSecondary} />
-            <Text style={[styles.sessionSourcesTitle, { color: themeColors.text }]}>
-              Source
+            <View style={[
+              styles.historyItemIconContainer,
+              { backgroundColor: themeColors.sourcesIconBg }
+            ]}>
+              <Icon name="info" size={20} color={themeColors.primary} />
+            </View>
+            <Text style={[
+              styles.sessionSourcesTitle,
+              { color: themeColors.text }
+            ]}>
+              Sources
             </Text>
           </View>
           <Icon 
@@ -822,27 +1183,56 @@ const ChatBotScreen = () => {
         {isSourcesExpanded && (
           <View style={styles.sourcesList}>
             {sessionSources.map((source, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.sourceItem}
-                onPress={() => {
-                  handleSourceClick(source);
-                  setIsSourcesExpanded(false);
-                }}
-              >
-                <View style={styles.sourceHeader}>
-                  <Icon name="mail-outline" size={16} color={themeColors.textSecondary} />
-                  <Text style={[styles.sourceType, { color: themeColors.textSecondary }]}>
-                    {source.source}
+              <View key={`source-${source.source}-${index}-${Math.random().toString(36).substr(2, 9)}`}>
+                <TouchableOpacity
+                  style={[
+                    styles.sourceItem,
+                    { 
+                      backgroundColor: themeColors.cardBg,
+                      borderColor: themeColors.sourcesBorder,
+                    }
+                  ]}
+                  onPress={() => {
+                    handleSourceClick(source);
+                  }}
+                >
+                  <View style={styles.sourceHeader}>
+                    <Icon name="mail-outline" size={18} color={themeColors.primary} />
+                    <Text style={[styles.sourceType, { color: themeColors.textSecondary }]}>
+                      {source.source}
+                    </Text>
+                  </View>
+                  <Text style={[styles.sourceSubject, { color: themeColors.text }]}>
+                    {source.subject}
                   </Text>
-                </View>
-                <Text style={[styles.sourceSubject, { color: themeColors.text }]}>
-                  {source.subject}
-                </Text>
-                <Text style={[styles.sourceDate, { color: themeColors.textSecondary }]}>
-                  Received: {source.received_on}
-                </Text>
-              </TouchableOpacity>
+                  <Text style={[styles.sourceDate, { color: themeColors.textSecondary }]}>
+                    Received: {source.received_on}
+                  </Text>
+                </TouchableOpacity>
+                
+                {source.has_attachment === 1 && source.attachments && (
+                  <View style={styles.sourceAttachmentsContainer}>
+                    <Text style={[styles.attachmentsTitle, { color: themeColors.textSecondary }]}>
+                      Attachments:
+                    </Text>
+                    {source.attachments.map((attachment, index) => (
+                      <TouchableOpacity
+                        key={`attachment-${attachment.file_name}-${index}-${Math.random().toString(36).substr(2, 9)}`}
+                        style={[
+                          styles.attachmentItem,
+                          { backgroundColor: themeColors.sourcesHeaderBg }
+                        ]}
+                        onPress={() => handleLinkPress(attachment.link)}
+                      >
+                        <Icon name="attachment" size={16} color={themeColors.primary} />
+                        <Text style={[styles.attachmentText, { color: themeColors.primary }]}>
+                          {attachment.file_name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
             ))}
           </View>
         )}
@@ -865,6 +1255,27 @@ const ChatBotScreen = () => {
       console.error('Error starting new conversation:', error);
     }
   };
+
+  // Add this useEffect after the existing useEffects
+  useEffect(() => {
+    const loadSessionMetadata = async () => {
+      if (currentSessionId) {
+        try {
+          const metadata = await getSessionMetadata(currentSessionId);
+          if (metadata && metadata.meta_data) {
+            setSessionSources([metadata.meta_data]);
+          } else {
+            setSessionSources([]);
+          }
+        } catch (error) {
+          console.error('Error loading session metadata:', error);
+          setSessionSources([]);
+        }
+      }
+    };
+
+    loadSessionMetadata();
+  }, [currentSessionId]); // This will run whenever currentSessionId changes
 
   // Move styles inside component
   const styles = StyleSheet.create({
@@ -912,32 +1323,20 @@ const ChatBotScreen = () => {
       paddingTop:10
     },
     messageRow: {
-      marginVertical: 6,
+      marginVertical: 4, // Reduced vertical margin
       flexDirection: 'row',
       alignItems: 'flex-end',
-    },
-    botIconCircle: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 10,
-      elevation: 2,
+      paddingHorizontal: 8, // Reduced horizontal padding
     },
     messageBubble: {
-      maxWidth: '80%',
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
-      borderBottomLeftRadius: 4,
-      borderBottomRightRadius: 20,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
+      paddingHorizontal: 8,
+      paddingVertical: 8,
       marginBottom: 2,
-      elevation: 1,
+      elevation: 0, // Remove shadow for bot messages
     },
     userBubble: {
-      maxWidth: '80%',
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
       borderBottomLeftRadius: 20,
@@ -945,11 +1344,14 @@ const ChatBotScreen = () => {
       paddingHorizontal: 16,
       paddingVertical: 12,
       marginBottom: 2,
-      elevation: 1,
+      elevation: 1, // Keep shadow for user messages
     },
     messageText: {
       fontSize: 16,
       lineHeight: 22,
+      userSelect: 'text',
+      selectable: true,
+      textSelectable: true
     },
     timestampText: {
       fontSize: 10,
@@ -976,7 +1378,6 @@ const ChatBotScreen = () => {
       zIndex: 999,
     },
     inputBarCard: {
-
       borderRadius: 24,
       overflow: 'hidden',
       elevation: 4,
@@ -1097,33 +1498,47 @@ const ChatBotScreen = () => {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: 16,
-      borderRadius: 16,
-      marginBottom: 12,
+      padding: 12,
+      borderRadius: 12,
+      marginBottom: 8,
       borderWidth: 1,
-      elevation: 2,
+      elevation: 1,
     },
     historyItemContent: {
       flex: 1,
-      marginRight: 12,
-    },
-    historyItemHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 8,
-    },
-    historyItemIconContainer: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 12,
+      marginRight: 8,
     },
     historyItemName: {
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: 15,
+      fontWeight: '500',
       flex: 1,
+    },
+    currentSessionIndicator: {
+      width: 6,
+      height: '150%',
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      borderTopLeftRadius: 12,
+      borderBottomLeftRadius: 12,
+    },
+    emptyHistoryContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 24,
+    },
+    emptyHistoryText: {
+      fontSize: 16,
+      fontWeight: '500',
+      textAlign: 'center',
+      marginTop: 12,
+    },
+    emptyHistorySubText: {
+      fontSize: 14,
+      textAlign: 'center',
+      marginTop: 8,
+      opacity: 0.7,
     },
     citationContainer: {
       marginTop: 8,
@@ -1145,33 +1560,43 @@ const ChatBotScreen = () => {
       marginTop: 2,
     },
     sessionSourcesContainer: {
-      marginTop: 12,
-      padding: 12,
-      marginHorizontal: 16,
-      borderRadius: 16,
+      marginTop: 8,
+      padding: 8,
+      marginHorizontal: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      elevation: 1,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
     },
     sessionSourcesHeader: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      marginBottom: 4,
     },
     sessionSourcesTitleContainer: {
       flexDirection: 'row',
       alignItems: 'center',
     },
     sessionSourcesTitle: {
-      fontSize: 16,
+      fontSize: 14,
       fontWeight: '600',
       marginLeft: 8,
     },
     sourcesList: {
-      marginTop: 12,
+      marginTop: 4,
     },
     sourceItem: {
-      marginBottom: 12,
+      marginBottom: 8,
       padding: 12,
-      borderRadius: 12,
+      borderRadius: 8,
+      borderWidth: 1,
     },
     sourceHeader: {
       flexDirection: 'row',
@@ -1179,16 +1604,17 @@ const ChatBotScreen = () => {
       marginBottom: 4,
     },
     sourceType: {
-      fontSize: 13,
+      fontSize: 12,
+      fontWeight: '500',
       marginLeft: 6,
     },
     sourceSubject: {
-      fontSize: 15,
+      fontSize: 13,
       fontWeight: '500',
       marginTop: 4,
     },
     sourceDate: {
-      fontSize: 13,
+      fontSize: 12,
       marginTop: 2,
     },
     emptyStateContainer: {
@@ -1248,7 +1674,66 @@ const ChatBotScreen = () => {
       justifyContent: 'space-between',
       minWidth: 200,
     },
+    gmailLink: {
+      marginTop: 8,
+      padding: 8,
+      borderRadius: 8,
+      backgroundColor: themeColors.searchBg,
+    },
+    gmailLinkText: {
+      fontSize: 14,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    attachmentsContainer: {
+      marginTop: 8,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: 'rgba(0,0,0,0.1)',
+    },
+    attachmentsTitle: {
+      fontSize: 13,
+      marginBottom: 4,
+    },
+    attachmentItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 4,
+      paddingHorizontal: 8,
+      borderRadius: 4,
+      backgroundColor: 'rgba(0,0,0,0.05)',
+      marginTop: 4,
+    },
+    attachmentText: {
+      fontSize: 13,
+      marginLeft: 8,
+    },
+    sourceAttachmentsContainer: {
+      marginTop: 8,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: 'rgba(0,0,0,0.1)',
+      marginLeft: 16,
+    },
+    markdownContainer: {
+      userSelect: 'text',
+      selectable: true,
+      textSelectable: true
+    },
   });
+
+  // Add EmptyHistory component
+  const EmptyHistory = () => (
+    <View style={styles.emptyHistoryContainer}>
+      <Icon name="history" size={48} color={themeColors.textSecondary} />
+      <Text style={[styles.emptyHistoryText, { color: themeColors.text }]}>
+        No Chat History
+      </Text>
+      <Text style={[styles.emptyHistorySubText, { color: themeColors.textSecondary }]}>
+        Your chat history will appear here
+      </Text>
+    </View>
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDarkMode ? theme.background : BG_LIGHT }]}>
@@ -1319,9 +1804,10 @@ const ChatBotScreen = () => {
         <FlatList
           data={filteredHistory}
           renderItem={renderHistoryItem}
-          keyExtractor={item => item.id}
+          keyExtractor={item => `session-${item.session_id}-${Math.random().toString(36).substr(2, 9)}`}
           contentContainerStyle={styles.historyList}
           showsVerticalScrollIndicator={false}
+          ListEmptyComponent={EmptyHistory}
         />
       </Animated.View>
 
@@ -1436,7 +1922,7 @@ const ChatBotScreen = () => {
             ref={flatListRef}
             data={messages}
             renderItem={renderMessage}
-            keyExtractor={item => item.id}
+            keyExtractor={item => `msg-${item.id || Date.now()}-${Math.random().toString(36).substr(2, 9)}`}
             contentContainerStyle={[styles.messagesList, { paddingBottom: BOTTOM_BAR_HEIGHT }]}
             showsVerticalScrollIndicator={false}
             ListFooterComponent={renderTypingIndicator}

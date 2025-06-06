@@ -513,6 +513,21 @@ const App = () => {
           return;
         }
 
+        // Decode the ID token to get user email
+        const decodedToken = await decode(response.params.id_token);
+        const userEmail = decodedToken.email;
+
+        // Validate email domain before proceeding
+        if (!userEmail.endsWith('@klu.ac.in') && userEmail !== 'test.klu@gmail.com') {
+          console.log('Email domain not allowed:', userEmail);
+          showAlert(
+            "Authentication Failed",
+            "Only @klu.ac.in email addresses or test.klu@gmail.com are allowed to sign in."
+          );
+          setIsLoading(false);
+          return;
+        }
+
         setIsLoading(true);
         console.log('Attempting Supabase sign in with ID token...');
 

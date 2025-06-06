@@ -129,28 +129,11 @@ const CertificatesScreen = ({ navigation }) => {
 
   // Ensure media library permissions are granted
   const ensureMediaLibraryPermissions = async () => {
-    try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'To save certificates to your device gallery, please grant storage permissions in your device settings.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Open Settings', 
-              onPress: () => Linking.openSettings() 
-            }
-          ]
-        );
-        return false;
-      }
-      return true;
-    } catch (error) {
-      console.error('Permission request error:', error);
-      showSnackbar('Failed to request storage permissions', 'error');
-      return false;
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    if (status !== 'granted') {
+      showSnackbar('To save certificates to your device gallery, please grant storage permissions.');
     }
+    return status === 'granted';
   };
 
   // Certificate loading
@@ -214,7 +197,6 @@ const CertificatesScreen = ({ navigation }) => {
       setRawCertificates(uniqueCertificates);
     } catch (error) {
       console.error('Load error:', error);
-      showSnackbar('Failed to load certificates', 'error');
     } finally {
       setLoading(false);
     }
@@ -289,26 +271,6 @@ const CertificatesScreen = ({ navigation }) => {
     );
   };
 
-  // Handle picking image from gallery
-  const pickImage = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please grant access to your photo library to select images.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        allowsEditing: true,
-        quality: 0.8
-      });
-      if (result.canceled || !result.assets || !result.assets[0]) return;
-      await processSelectedImage(result.assets[0].uri);
-    } catch (error) {
-      console.error('Image picking error:', error);
-      Alert.alert('Error', 'Failed to import certificate from gallery');
-    }
-  };
-
   // Handle image capture and saving
   const takePicture = async () => {
     try {
@@ -319,13 +281,35 @@ const CertificatesScreen = ({ navigation }) => {
       }
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
-        quality: 0.8
+        quality: 0.8,
+       
       });
       if (result.canceled || !result.assets || !result.assets[0]) return;
       await processSelectedImage(result.assets[0].uri);
     } catch (error) {
       console.error('Camera error:', error);
       Alert.alert('Error', 'Failed to capture certificate with camera');
+    }
+  };
+
+  // Handle picking image from gallery
+  const pickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please grant access to your photo library to select images.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+       
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets || !result.assets[0]) return;
+      await processSelectedImage(result.assets[0].uri);
+    } catch (error) {
+      console.error('Image picking error:', error);
+      Alert.alert('Error', 'Failed to import certificate from gallery');
     }
   };
 
@@ -341,6 +325,18 @@ const CertificatesScreen = ({ navigation }) => {
     }
   };
 
+  // Refactored album check function
+  const checkOrCreateAlbum = async () => {
+    try {
+      const albums = await MediaLibrary.getAlbumsAsync();
+      const existingAlbum = albums.find(album => album.title === FOLDER_NAME);
+      return existingAlbum;
+    } catch (error) {
+      console.error('Album check error:', error);
+      return null;
+    }
+  };
+
   const handleFileNameSubmit = async (name) => {
     if (!name || !name.trim()) {
       showSnackbar('Please enter a valid file name', 'error');
@@ -349,8 +345,8 @@ const CertificatesScreen = ({ navigation }) => {
 
     // Check if a file with the same name already exists
     const finalName = name.trim().endsWith('.jpg') ? name.trim() : `${name.trim()}.jpg`;
-    const destinationUri = CERTIFICATES_DIRECTORY + finalName;
-    const fileExists = await FileSystem.getInfoAsync(destinationUri);
+    const internalUri = CERTIFICATES_DIRECTORY + finalName;
+    const fileExists = await FileSystem.getInfoAsync(internalUri);
     
     if (fileExists.exists) {
       showSnackbar('A certificate with this name already exists. Please choose a different name.', 'error');
@@ -368,57 +364,74 @@ const CertificatesScreen = ({ navigation }) => {
       // Check for permissions before proceeding
       const hasPermission = await ensureMediaLibraryPermissions();
       if (!hasPermission) {
+        showSnackbar('Storage permission is required to save certificates. Please grant permission and try again.', 'error');
         setLoading(false);
         return false;
       }
 
-      // Ensure the certificates directory exists
-      const dirInfo = await FileSystem.getInfoAsync(CERTIFICATES_DIRECTORY);
-      if (!dirInfo.exists) {
-        await FileSystem.makeDirectoryAsync(CERTIFICATES_DIRECTORY, { intermediates: true });
-      }
-      
-      // Copy the file to our app directory
+      // Save to internal storage FIRST with custom name
       await FileSystem.copyAsync({
         from: selectedImageUri,
-        to: destinationUri,
+        to: internalUri,
       });
 
-      // Get or create album
-      const album = await getOrCreateAlbum();
+      // Check if album exists
+      let album = await checkOrCreateAlbum();
+      
       if (!album) {
-        throw new Error('Failed to get or create album');
+        // Create new album
+        if (Platform.OS === 'android') {
+          // For Android, create asset from internal file first
+          const asset = await MediaLibrary.createAssetAsync(internalUri);
+          if (!asset) {
+            throw new Error('Failed to create asset');
+          }
+          // Create album with the asset
+          album = await MediaLibrary.createAlbumAsync(FOLDER_NAME, asset, false);
+        } else {
+          // For iOS, create empty album first
+          album = await MediaLibrary.createAlbumAsync(FOLDER_NAME, null, false);
+          // Then create and add asset
+          const asset = await MediaLibrary.createAssetAsync(internalUri);
+          if (!asset) {
+            throw new Error('Failed to create asset');
+          }
+          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+        }
+      } else {
+        // Add asset to existing album
+        const asset = await MediaLibrary.createAssetAsync(internalUri);
+        if (!asset) {
+          throw new Error('Failed to create asset');
+        }
+        await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
       }
 
-      // Save to media library with the same name
-      const asset = await MediaLibrary.createAssetAsync(destinationUri);
-      if (!asset) {
-        throw new Error('Failed to create asset');
+      if (!album) {
+        throw new Error('Failed to create or access album');
       }
-
-      // Add to album
-      await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
       
-      // Close modal and reset states
-      setShowNameModal(false);
-      setFileName('');
-      setSelectedImageUri(null);
-      Keyboard.dismiss();
-      
-      // Show success message
       showSnackbar(`Certificate saved as "${finalName}"! It is available in your device gallery.`, 'success');
       
-      // Force reload certificates
-      setRawCertificates([]); // Clear existing certificates
-      await loadCertificates(); // Reload certificates
-      
+      // Refresh the certificates list
+      await loadCertificates();
       return true;
     } catch (error) {
-      console.error('Image saving error:', error);
+      console.error('Image processing error:', error);
+      // Clean up the internal file if it was created
+      try {
+        await FileSystem.deleteAsync(internalUri);
+      } catch (deleteError) {
+        console.error('Failed to cleanup internal file:', deleteError);
+      }
       showSnackbar('Failed to save certificate. Please try again.', 'error');
       return false;
     } finally {
       setLoading(false);
+      setShowNameModal(false);
+      setFileName('');
+      setSelectedImageUri(null);
+      Keyboard.dismiss();
     }
   };
 
@@ -429,198 +442,151 @@ const CertificatesScreen = ({ navigation }) => {
   };
 
   // File Name Modal Component
-  const FileNameModal = () => {
-    const inputRef = useRef(null);
-    const [localFileName, setLocalFileName] = useState("");
-    const [error, setError] = useState("");
+ const FileNameModal = () => {
+  const inputRef = useRef(null);
+  const [localFileName, setLocalFileName] = useState("");
+  const [error, setError] = useState("");
 
-    useEffect(() => {
-      if (showNameModal) {
-        setLocalFileName("");
-        setError("");
-        const timer = setTimeout(() => {
-          if (inputRef.current) {
-            inputRef.current.focus();
-          }
-        }, 100);
-        return () => clearTimeout(timer);
-      }
-    }, [showNameModal]);
-
-    const handleModalClose = () => {
-      if (!loading) {
-        setShowNameModal(false);
-        setLocalFileName("");
-        setError("");
-        setSelectedImageUri(null); // Reset selected image when modal is closed
-        handleFileNameCancel();
-      }
-    };
-
-    const handleInputChange = (text) => {
-      // Remove any invalid characters
-      const sanitizedText = text.replace(/[^a-zA-Z0-9\s\-_\.]/g, '');
-      setLocalFileName(sanitizedText);
-      if (sanitizedText.trim()) {
-        setError("");
-      }
-    };
-
-    const handleSubmit = async () => {
-      if (!localFileName.trim()) {
-        setError("Please enter a valid file name");
-        return;
-      }
-      const success = await handleFileNameSubmit(localFileName);
-      if (success) {
-        setLocalFileName("");
-        setError("");
-      }
-    };
-
-    return (
-      <Modal
-        visible={showNameModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={handleModalClose}
-        statusBarTranslucent
-        onShow={() => {
-          if (inputRef.current) {
-            inputRef.current.focus();
-          }
-        }}
-      >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
-          enabled
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={{ 
-              flex: 1, 
-              justifyContent: 'center', 
-              alignItems: 'center',
-              backgroundColor: 'rgba(16,24,40,0.18)'
-            }}>
-              <TouchableWithoutFeedback onPress={e => e.stopPropagation()}>
-                <View style={{ 
-                  backgroundColor: isDarkMode ? theme.surface : WHITE, 
-                  borderRadius: 16,
-                  padding: 24, 
-                  width: '90%',
-                  maxWidth: 320,
-                  shadowColor: '#000', 
-                  shadowOpacity: 0.12, 
-                  shadowRadius: 16, 
-                  shadowOffset: { width: 0, height: 8 }, 
-                  elevation: 8
-                }}>
-                  <Text style={{ 
-                    fontSize: 18, 
-                    fontWeight: 'bold', 
-                    color: isDarkMode ? theme.text : TEXT_DARK, 
-                    marginBottom: 16 
-                  }}>
-                    Name Certificate
-                  </Text>
-                  <TextInput
-                    ref={inputRef}
-                    style={{ 
-                      backgroundColor: isDarkMode ? '#232B3A' : BG_LIGHT, 
-                      borderRadius: 8, 
-                      padding: 12, 
-                      marginBottom: error ? 8 : 20, 
-                      color: isDarkMode ? theme.text : TEXT_DARK, 
-                      borderWidth: 1, 
-                      borderColor: error ? RED : (isDarkMode ? theme.border : '#E2E8F0'), 
-                      fontSize: 16 
-                    }}
-                    placeholder="Enter certificate name"
-                    placeholderTextColor={isDarkMode ? theme.textSecondary : TEXT_SECONDARY}
-                    value={localFileName}
-                    onChangeText={handleInputChange}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="default"
-                    textContentType="none"
-                    maxLength={50}
-                    blurOnSubmit={false}
-                    returnKeyType="done"
-                    onSubmitEditing={handleSubmit}
-                  />
-                  {error ? (
-                    <Text style={{ 
-                      color: RED, 
-                      fontSize: 14, 
-                      marginBottom: 20 
-                    }}>
-                      {error}
-                    </Text>
-                  ) : null}
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}>
-                    <Button
-                      mode="outlined"
-                      onPress={handleModalClose}
-                      style={{ flex: 1 }}
-                      textColor={RED}
-                      buttonColor={isDarkMode ? theme.surface : WHITE}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      mode="contained"
-                      onPress={handleSubmit}
-                      style={{ flex: 1 }}
-                      buttonColor={isDarkMode ? TEAL : GREEN}
-                      disabled={loading}
-                    >
-                      {loading ? 'Saving...' : 'Confirm'}
-                    </Button>
-                  </View>
-                </View>
-              </TouchableWithoutFeedback>
-            </View>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
-      </Modal>
-    );
-  };
-
-  // Get or create album for certificates with improved error handling
-  const getOrCreateAlbum = async () => {
-    try {
-      // First try to find existing album
-      const albums = await MediaLibrary.getAlbumsAsync();
-      const certificatesAlbum = albums.find(album => album.title === FOLDER_NAME);
-      
-      if (certificatesAlbum) {
-        return certificatesAlbum;
-      }
-      
-      // Album doesn't exist, create it
-      if (Platform.OS === 'android') {
-        // For Android, we need to create a temporary asset first
-        const tempAsset = await MediaLibrary.createAssetAsync(selectedImageUri);
-        if (!tempAsset) {
-          throw new Error('Failed to create temporary asset');
+  useEffect(() => {
+    if (showNameModal) {
+      setLocalFileName("");
+      setError("");
+      const timer = setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
         }
-        const newAlbum = await MediaLibrary.createAlbumAsync(FOLDER_NAME, tempAsset, false);
-        // Delete the temporary asset after creating the album
-        await MediaLibrary.deleteAssetsAsync([tempAsset]);
-        return newAlbum;
-      } else {
-        // For iOS, we can create an empty album
-        const newAlbum = await MediaLibrary.createAlbumAsync(FOLDER_NAME, null, false);
-        return newAlbum;
-      }
-    } catch (error) {
-      console.error('Album creation/fetch error:', error);
-      showSnackbar('Failed to create or access album', 'error');
-      return null;
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [showNameModal]);
+
+  const handleModalClose = () => {
+    if (!loading) {
+      setShowNameModal(false);
+      setLocalFileName("");
+      setError("");
+      handleFileNameCancel();
     }
   };
+
+  const handleInputChange = (text) => {
+    setLocalFileName(text);
+    if (text.trim()) {
+      setError("");
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!localFileName.trim()) {
+      setError("Please enter a valid file name");
+      return;
+    }
+    const success = await handleFileNameSubmit(localFileName);
+    if (success) {
+      setLocalFileName("");
+      setError("");
+    }
+  };
+
+  return (
+    <Modal
+      visible={showNameModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={handleModalClose}
+      statusBarTranslucent
+      onShow={() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }}
+    >
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+        enabled
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={{ 
+            flex: 1, 
+            justifyContent: 'center', 
+            alignItems: 'center',
+            backgroundColor: 'rgba(16,24,40,0.18)'
+          }}>
+            <TouchableWithoutFeedback onPress={e => e.stopPropagation()}>
+              <View style={{ 
+                backgroundColor: isDarkMode ? theme.surface : WHITE, 
+                borderRadius: 16,
+                padding: 24, 
+                width: '90%',
+                maxWidth: 320,
+                shadowColor: '#000', 
+                shadowOpacity: 0.12, 
+                shadowRadius: 16, 
+                shadowOffset: { width: 0, height: 8 }, 
+                elevation: 8
+              }}>
+                <Text style={{ 
+                  fontSize: 18, 
+                  fontWeight: 'bold', 
+                  color: isDarkMode ? theme.text : TEXT_DARK, 
+                  marginBottom: 16 
+                }}>
+                  Name Certificate
+                </Text>
+                <TextInput
+                  ref={inputRef}
+                  style={{ 
+                    backgroundColor: isDarkMode ? '#232B3A' : BG_LIGHT, 
+                    borderRadius: 8, 
+                    padding: 12, 
+                    marginBottom: 20, 
+                    color: isDarkMode ? theme.text : TEXT_DARK, 
+                    borderWidth: 1, 
+                    borderColor: isDarkMode ? theme.border : '#E2E8F0', 
+                    fontSize: 16 
+                  }}
+                  placeholder="Enter certificate name"
+                  placeholderTextColor={isDarkMode ? theme.textSecondary : TEXT_SECONDARY}
+                  value={localFileName}
+                  onChangeText={handleInputChange}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="default"
+                  textContentType="none"
+                  maxLength={50}
+                  blurOnSubmit={false}
+                  returnKeyType="done"
+                  onSubmitEditing={handleSubmit}
+                />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}>
+                  <Button
+                    mode="outlined"
+                    onPress={handleModalClose}
+                    style={{ flex: 1 }}
+                    textColor={RED}
+                    buttonColor={isDarkMode ? theme.surface : WHITE}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    mode="contained"
+                    onPress={handleSubmit}
+                    style={{ flex: 1 }}
+                    buttonColor={isDarkMode ? TEAL : GREEN}
+                  >
+                    Confirm
+                  </Button>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+};
 
   // Handle certificate sharing
   const handleShareCertificate = async () => {
@@ -659,14 +625,11 @@ const CertificatesScreen = ({ navigation }) => {
       // Delete from app's internal storage
       await FileSystem.deleteAsync(selectedCertificate.uri);
       
-      // Try to delete from media library if possible
-      const { status } = await MediaLibrary.getPermissionsAsync();
-      if (status === 'granted') {
-        try {
-          await deleteFromMediaLibrary(selectedCertificate.filename);
-        } catch (mediaError) {
-          console.log('Media library deletion error:', mediaError);
-        }
+      // Delete from media library
+      try {
+        await deleteFromMediaLibrary(selectedCertificate.filename);
+      } catch (mediaError) {
+        console.log('Media library deletion error:', mediaError);
       }
       
       await loadCertificates();
@@ -683,7 +646,6 @@ const CertificatesScreen = ({ navigation }) => {
 
   // Helper function to delete asset from media library
   const deleteFromMediaLibrary = async (filename) => {
-    // 1. Try to find the certificate in our album first
     try {
       const albums = await MediaLibrary.getAlbumsAsync();
       const targetAlbum = albums.find(album => album.title === FOLDER_NAME);
@@ -709,7 +671,7 @@ const CertificatesScreen = ({ navigation }) => {
         }
       }
       
-      // 2. If not found in our album, search in all photos
+      // If not found in our album, search in all photos
       const allPhotos = await MediaLibrary.getAssetsAsync({
         mediaType: 'photo',
         first: 100 // Limit search to recent photos
@@ -770,7 +732,9 @@ const CertificatesScreen = ({ navigation }) => {
         shadowOpacity: 0.08,
         shadowRadius: 8,
         shadowOffset: { width: 0, height: 4 },
-        elevation: 4
+        elevation: 4,
+        borderWidth: 1,
+        borderColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'
       }}>
         <Image
           source={{ uri: item.uri }}
@@ -780,15 +744,22 @@ const CertificatesScreen = ({ navigation }) => {
         <View style={{ flex: 1 }}>
           <Text style={{ 
             fontSize: 16, 
-            fontWeight: '600', 
+            fontWeight: '700', 
             color: isDarkMode ? theme.text : '#0F172A', 
-            marginBottom: 2 
+            marginBottom: 4,
+            letterSpacing: -0.3
           }} numberOfLines={1}>
             {item.filename.replace('.jpg', '')}
           </Text>
           <Text style={{ 
-            fontSize: 13, 
-            color: isDarkMode ? theme.textSecondary : '#64748B' 
+            fontSize: 14, 
+            color: isDarkMode ? theme.textSecondary : '#64748B',
+            fontWeight: '500',
+            backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)',
+            paddingHorizontal: 8,
+            paddingVertical: 2,
+            borderRadius: 4,
+            alignSelf: 'flex-start'
           }}>
             Added {item.date}
           </Text>
@@ -805,9 +776,10 @@ const CertificatesScreen = ({ navigation }) => {
       backgroundColor: 'transparent'
     }}>
       <Text style={{
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: isDarkMode ? theme.text : '#0F172A'
+        fontSize: 17,
+        fontWeight: '800',
+        color: isDarkMode ? theme.text : '#0F172A',
+        letterSpacing: -0.3
       }}>
         {section.title}
       </Text>
@@ -822,10 +794,19 @@ const CertificatesScreen = ({ navigation }) => {
   const EmptyState = () => (
     <View style={styles.emptyState}>
       <Ionicons name="document-text-outline" size={60} color={theme.textSecondary} />
-      <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+      <Text style={[styles.emptyText, { 
+        color: theme.textSecondary,
+        fontSize: 18,
+        fontWeight: '700',
+        letterSpacing: -0.3
+      }]}>
         No certificates found
       </Text>
-      <Text style={[styles.emptySubText, { color: theme.textSecondary }]}>
+      <Text style={[styles.emptySubText, { 
+        color: theme.textSecondary,
+        fontSize: 15,
+        fontWeight: '500'
+      }]}>
         Tap the "+" button to add certificates
       </Text>
     </View>
@@ -1012,24 +993,38 @@ const CertificatesScreen = ({ navigation }) => {
             </TouchableOpacity>
             <Text style={{
               fontSize: 24,
-              fontWeight: 'bold',
+              fontWeight: '800',
               color: isDarkMode ? '#fff' : '#0F172A',
               textAlign: 'center',
-              flex: 1
+              flex: 1,
+              letterSpacing: -0.5
             }}>
               Certificates
             </Text>
             <View style={{ width: 34 }} />
           </View>
+         
           <Text style={{
-            color: isDarkMode ? '#fff' : '#64748B',
-            fontSize: 15,
-            marginTop: 6,
-            marginBottom: 4,
+            color: isDarkMode ? '#19C6C1' : '#0F766E',
+            fontSize: 14,
             textAlign: 'center',
-            opacity: 0.8
+            marginTop: 6,
+            marginBottom: 8,
+            fontWeight: '600',
+            letterSpacing: 0.2
           }}>
-            Track your academic certificates
+            All certificates are stored in{' '}
+            <Text style={{ 
+              fontWeight: '700',
+              backgroundColor: isDarkMode ? 'rgba(25, 198, 193, 0.15)' : 'rgba(15, 118, 110, 0.15)',
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+              borderRadius: 6,
+              letterSpacing: 0.3
+            }}>
+              Pictures/KareBot Certificates
+            </Text>
+            {' '}folder in your mobile storage.
           </Text>
         </View>
         {/* Search Bar */}
@@ -1169,19 +1164,7 @@ const CertificatesScreen = ({ navigation }) => {
                   <View style={styles.viewerButtons}>
                     <TouchableOpacity 
                       style={[styles.shareButton, { backgroundColor: 'rgba(25, 198, 193, 0.3)' }]} 
-                      onPress={() => {
-                        const currentImage = viewerImages[currentImageIndex];
-                        if (currentImage) {
-                          Sharing.shareAsync(currentImage.url, {
-                            mimeType: 'image/jpeg',
-                            dialogTitle: 'Share Certificate',
-                            UTI: 'public.image'
-                          }).catch(error => {
-                            console.error('Share error:', error);
-                            showSnackbar('Failed to share certificate', 'error');
-                          });
-                        }
-                      }}
+                      onPress={() => handleShareCertificate()}
                       activeOpacity={0.7}
                     >
                       <Ionicons name="share-outline" size={20} color="#fff" />

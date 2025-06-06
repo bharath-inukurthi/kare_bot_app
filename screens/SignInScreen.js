@@ -37,6 +37,20 @@ const SignInScreen = ({
   const slideAnim = useRef(new Animated.Value(50)).current;
   const imageScale = useRef(new Animated.Value(0.8)).current;
 
+  const validateEmail = (email) => {
+    return email.endsWith('@klu.ac.in') || email === 'test.klu@gmail.com';
+  };
+
+  const handleGoogleSignInPress = () => {
+    // Show alert immediately if trying to sign in with non-KLU email
+    Alert.alert(
+      "Authentication Failed",
+      "Only @klu.ac.in email addresses or test.klu@gmail.com are allowed to sign in.",
+      [{ text: "OK" }]
+    );
+    return;
+  };
+
   useEffect(() => {
     // Start animations when component mounts
     Animated.parallel([
@@ -105,7 +119,7 @@ const SignInScreen = ({
         >
           <TouchableOpacity
             style={styles.googleButton}
-            onPress={handleGoogleSignIn}
+            onPress={handleGoogleSignInPress}
             disabled={isLoading}
             activeOpacity={0.85}
           >

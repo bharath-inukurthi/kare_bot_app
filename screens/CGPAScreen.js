@@ -371,16 +371,22 @@ const CGPAScreen = ({ navigation }) => {
         visible={snackbarVisible}
         onDismiss={() => setSnackbarVisible(false)}
         duration={3000}
-        style={[
-          styles.snackbar,
-          { backgroundColor: isDarkMode ?  '#EF4444' : '#FEE2E2',"text":isDarkMode ?  '#FEE2E2' : '#EF4444'}
-        ]}
+        style={{
+          backgroundColor: isDarkMode ? '#EF4444' : '#FEE2E2',
+          margin: 16,
+          borderRadius: 8,
+        }}
         action={{
           label: 'Dismiss',
           onPress: () => setSnackbarVisible(false),
+          textColor: isDarkMode ? '#FEE2E2' : '#EF4444'
         }}
       >
-        {snackbarMessage}
+        <Text style={{ 
+          color: isDarkMode ? '#FEE2E2' : '#EF4444'
+        }}>
+          {snackbarMessage}
+        </Text>
       </Snackbar>
 
     </SafeAreaView>
@@ -507,10 +513,6 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     minWidth: 100,
-  },
-  snackbar: {
-    margin: 16,
-    borderRadius: 8,
   },
 });
 
