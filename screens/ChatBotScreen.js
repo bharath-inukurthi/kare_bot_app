@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -428,9 +428,11 @@ const ChatBotScreen = () => {
   const [isSourcesExpanded, setIsSourcesExpanded] = useState(false);
 
   // Add new state for streaming text
+  const [streamingState, setStreamingState] = useState('IDLE'); // IDLE, STREAMING, COMPLETE
   const [streamingText, setStreamingText] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const streamingTimeout = useRef(null);
+  const cursorAnimation = useRef(new Animated.Value(0)).current;
 
   // Add new state for new conversation
   const [isNewConversation, setIsNewConversation] = useState(false);
@@ -438,6 +440,129 @@ const ChatBotScreen = () => {
   // Add this new state variable
   const [isGmailAuthenticated, setIsGmailAuthenticated] = useState(false);
   const [gmailMessages, setGmailMessages] = useState([]);
+
+  // Update streaming configuration
+  const STREAMING_CONFIG = {
+    wordDelay: 20, // Reduced from 30ms to 20ms for faster typing
+    mode: 'word',
+    chunkSize: 1
+  };
+
+  // Add back the sources animation value
+  const sourcesAnimation = useRef(new Animated.Value(0)).current;
+
+  // Add back the animation configuration
+  const ANIMATION_CONFIG = {
+    text: {
+      typingSpeed: 15,
+      chunkSize: 3,
+    },
+    sources: {
+      delay: 800,
+      tension: 45,
+      friction: 9,
+      velocity: 0.2,
+    },
+    cursor: {
+      duration: 600,
+    }
+  };
+
+  // Add these new animation functions
+  const animateCursor = useCallback(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(cursorAnimation, {
+          toValue: 1,
+          duration: STREAMING_CONFIG.cursorBlinkSpeed,
+          useNativeDriver: true,
+        }),
+        Animated.timing(cursorAnimation, {
+          toValue: 0,
+          duration: STREAMING_CONFIG.cursorBlinkSpeed,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, [cursorAnimation]);
+
+  // Add back the sources animation function
+  const animateSources = useCallback(() => {
+    sourcesAnimation.setValue(0);
+    Animated.spring(sourcesAnimation, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: ANIMATION_CONFIG.sources.tension,
+      friction: ANIMATION_CONFIG.sources.friction,
+      velocity: ANIMATION_CONFIG.sources.velocity,
+      restDisplacementThreshold: 0.01,
+      restSpeedThreshold: 0.01,
+    }).start();
+  }, [sourcesAnimation]);
+
+  // Add this new function to handle scroll events
+  const handleScroll = useCallback((event) => {
+    const currentScrollY = event.nativeEvent.contentOffset.y;
+    const currentContentHeight = event.nativeEvent.contentSize.height;
+    const currentScrollViewHeight = event.nativeEvent.layoutMeasurement.height;
+    
+    // Update refs for later use
+    lastScrollY.current = currentScrollY;
+    contentHeight.current = currentContentHeight;
+    scrollViewHeight.current = currentScrollViewHeight;
+
+    // Check if user is scrolling up (previous position was lower)
+    if (currentScrollY < lastScrollY.current) {
+      setIsUserScrolling(true);
+      setShouldAutoScroll(false);
+    }
+    
+    // Check if user has scrolled to bottom (with a small threshold)
+    const isAtBottom = currentContentHeight - currentScrollViewHeight - currentScrollY < 50;
+    if (isAtBottom) {
+      setIsUserScrolling(false);
+      setShouldAutoScroll(true);
+    }
+  }, []);
+
+  // Update the streamText function
+  const streamText = useCallback((text) => {
+    if (!text) return;
+    
+    let currentIndex = 0;
+    const textLength = text.length;
+    
+    const streamNextWord = () => {
+      if (currentIndex < textLength) {
+        let nextSpace = text.indexOf(' ', currentIndex);
+        if (nextSpace === -1) {
+          nextSpace = textLength;
+        }
+        
+        const word = text.slice(currentIndex, nextSpace + 1);
+        currentIndex = nextSpace + 1;
+        
+        setStreamingText(prev => prev + word);
+        setMessages(prevMessages => {
+          const newMessages = [...prevMessages];
+          const lastMessage = newMessages[newMessages.length - 1];
+          if (lastMessage && lastMessage.sender === 'ai') {
+            lastMessage.text = (lastMessage.text || '') + word;
+          }
+          return newMessages;
+        });
+
+        // Always scroll to end during streaming to ensure typing effect is visible
+        if (flatListRef.current) {
+          flatListRef.current.scrollToEnd({ animated: true });
+        }
+        
+        streamingTimeout.current = setTimeout(streamNextWord, STREAMING_CONFIG.wordDelay);
+      }
+    };
+    
+    streamNextWord();
+  }, []);
 
   // Initialize user UUID and load last session
   useEffect(() => {
@@ -519,6 +644,7 @@ const ChatBotScreen = () => {
   // Load messages for a session
   const loadSessionMessages = async (sessionId) => {
     try {
+      // Load messages
       const sessionMessages = await getMessages(sessionId);
       
       const formattedMessages = sessionMessages.map(msg => ({
@@ -528,13 +654,42 @@ const ChatBotScreen = () => {
       
       setMessages(formattedMessages);
       setCurrentSessionId(sessionId);
+      
+      // Load session metadata (sources)
+      try {
+        const metadata = await getSessionMetadata(sessionId);
+        if (metadata && metadata.meta_data) {
+          // Handle both single metadata object and array of metadata
+          const sources = Array.isArray(metadata.meta_data) 
+            ? metadata.meta_data 
+            : [metadata.meta_data];
+          
+          setSessionSources(sources);
+          
+          // Animate sources appearance
+          requestAnimationFrame(() => {
+            cursorAnimation.stopAnimation();
+          });
+        } else {
+          setSessionSources([]);
+        }
+      } catch (error) {
+        console.error('Error loading session metadata:', error);
+        setSessionSources([]);
+      }
+      
       toggleHistory();
     } catch (error) {
       console.error('Error loading session messages:', error);
     }
   };
 
-  // Update the WebSocket connection and message handling
+  // Add a helper function for generating unique IDs
+  const generateUniqueId = () => {
+    return `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  };
+
+  // Update the WebSocket message handling
   useEffect(() => {
     if (userUuid) {
       console.log('Initializing WebSocket connection...');
@@ -542,18 +697,40 @@ const ChatBotScreen = () => {
         if (data.status === 'routing') {
           setCurrentTool(data.current_tool);
           setIsTyping(true);
-        } else if (data.status === 'streaming') {
-          setIsStreaming(true);
-          setStreamingText(prev => prev + data.chunk);
-          // Scroll to bottom when streaming
-          if (flatListRef.current) {
-            flatListRef.current.scrollToEnd({ animated: true });
+          setStreamingText('');
+          setStreamingState('IDLE');
+        } else if (data.status === 'STREAMING') {
+          if (streamingState === 'IDLE') {
+            setStreamingState('STREAMING');
+            setIsStreaming(true);
+            animateCursor();
+            const emptyMessage = {
+              id: generateUniqueId(),
+              text: '',
+              sender: 'ai',
+              isStreaming: true
+            };
+            setMessages(prevMessages => [...prevMessages, emptyMessage]);
           }
+          streamText(data.chunk);
         } else if (data.status === 'done' && data.answer) {
           setCurrentTool(null);
-          setIsStreaming(false);
+          setIsTyping(true);
           
-          // Extract citation data from bot response
+          if (streamingState === 'IDLE') {
+            setStreamingState('STREAMING');
+            setIsStreaming(true);
+            animateCursor();
+            const emptyMessage = {
+              id: generateUniqueId(),
+              text: '',
+              sender: 'ai',
+              isStreaming: true
+            };
+            setMessages(prevMessages => [...prevMessages, emptyMessage]);
+            streamText(data.answer.answer);
+          }
+          
           const citationData = {
             source: data.answer.source,
             subject: data.answer.subject,
@@ -565,7 +742,6 @@ const ChatBotScreen = () => {
             attachments: data.answer.has_attachment === 1 ? data.answer.attachments : []
           };
 
-          // Add to session sources if it's a new source
           if (citationData.source) {
             setSessionSources(prevSources => {
               const sourceExists = prevSources.some(
@@ -575,7 +751,6 @@ const ChatBotScreen = () => {
               if (!sourceExists) {
                 const newSources = [...prevSources, citationData];
                 
-                // Update metadata with new sources
                 if (sessionIdRef.current) {
                   updateSessionMetadata(sessionIdRef.current, citationData)
                     .catch(error => console.error('Error updating session metadata:', error));
@@ -586,7 +761,16 @@ const ChatBotScreen = () => {
               return prevSources;
             });
 
-            // If the source is Mail, construct and execute Gmail search
+            // Show sources immediately when they are available
+            setIsSourcesExpanded(true);
+            sourcesAnimation.setValue(0);
+            Animated.spring(sourcesAnimation, {
+              toValue: 1,
+              useNativeDriver: true,
+              tension: 50,
+              friction: 7
+            }).start();
+
             if (citationData.source === 'Mail' && citationData.subject) {
               const searchQuery = {
                 answer: {
@@ -600,35 +784,46 @@ const ChatBotScreen = () => {
             }
           }
           
-          const finalText = streamingText || data.answer.answer;
-          const botMessage = {
-            id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            text: finalText,
-            sender: 'ai',
-            citation: citationData
-          };
+          // Calculate delay based on number of words
+          const words = data.answer.answer.split(' ').length;
+          const streamingDelay = words * STREAMING_CONFIG.wordDelay + 50;
           
-          setMessages(prevMessages => [...prevMessages, botMessage]);
-          setStreamingText('');
-          setIsTyping(false);
+          // Wait for streaming to complete before finalizing the message
+          setTimeout(async () => {
+            const finalText = streamingText || data.answer.answer;
+            // Update the last message with final state
+            setMessages(prevMessages => {
+              const newMessages = [...prevMessages];
+              const lastMessage = newMessages[newMessages.length - 1];
+              if (lastMessage && lastMessage.sender === 'ai') {
+                lastMessage.text = finalText;
+                lastMessage.citation = citationData;
+                lastMessage.isStreaming = false;
+              }
+              return newMessages;
+            });
+            
+            setStreamingState('COMPLETE');
+            setIsStreaming(false);
+            setIsTyping(false);
+            cursorAnimation.stopAnimation();
 
-          // Add AI message to the session using the ref
-          if (sessionIdRef.current) {
-            console.log('Adding AI message to session:', sessionIdRef.current);
-            addMessage(sessionIdRef.current, 'ai', finalText)
-              .then(response => {
+            // Save AI message to session
+            if (sessionIdRef.current) {
+              try {
+                console.log('Adding AI message to session:', sessionIdRef.current);
+                const response = await addMessage(sessionIdRef.current, 'ai', finalText);
                 console.log('Successfully added AI message to session:', response);
-              })
-              .catch(error => {
+              } catch (error) {
                 console.error('Error adding AI message to session:', error);
-              });
-          } else {
-            console.error('No session ID available for AI message');
-          }
+              }
+            } else {
+              console.error('No session ID available for AI message');
+            }
+          }, streamingDelay);
         }
       });
 
-      // Cleanup function
       return () => {
         if (wsRef.current) {
           console.log('Closing WebSocket connection...');
@@ -637,9 +832,11 @@ const ChatBotScreen = () => {
         if (streamingTimeout.current) {
           clearTimeout(streamingTimeout.current);
         }
+        cursorAnimation.stopAnimation();
+        sourcesAnimation.stopAnimation();
       };
     }
-  }, [userUuid]); // Only depend on userUuid for connection
+  }, [userUuid, streamText, animateSources, animateCursor]);
 
   // Update session ID effect to also update the ref
   useEffect(() => {
@@ -718,70 +915,49 @@ const ChatBotScreen = () => {
 
   // Function to handle sending a message
   const handleSendMessage = async () => {
-    if (inputText.trim() === '' || !userUuid) return;
+    if (!inputText.trim()) return;
+
+    const newMessage = {
+      id: generateUniqueId(),
+      text: inputText.trim(),
+      sender: 'user'
+    };
+
+    setMessages(prevMessages => [...prevMessages, newMessage]);
+    setInputText('');
+    setIsTyping(true);
 
     try {
-      // Check if the message is a Gmail search request
-      if (inputText.toLowerCase().includes('search gmail') || inputText.toLowerCase().includes('find email')) {
-        if (!isGmailAuthenticated) {
-          await handleGmailAuth();
+      // If no session exists, create a new one
+      if (!sessionIdRef.current) {
+        const sessionResponse = await createSession(userUuid, newMessage.text);
+        if (sessionResponse && sessionResponse.session_id) {
+          setCurrentSessionId(sessionResponse.session_id);
+          sessionIdRef.current = sessionResponse.session_id;
+          console.log('Created new session:', sessionResponse.session_id);
+        } else {
+          console.error('Failed to create new session');
+          return;
         }
-        await handleGmailSearch(inputText);
       }
 
-      let sessionId = currentSessionId;
-      
-      // Create new session if this is the first message or if we're starting a new conversation
-      if (!sessionId || isNewConversation) {
-        console.log('Creating new session for message:', inputText.trim());
-        const sessionData = await createSession(userUuid, inputText.trim());
-        if (!sessionData || !sessionData.session_id) {
-          throw new Error('Invalid session data received');
-        }
-        sessionId = sessionData.session_id;
-        setCurrentSessionId(sessionId);
-        sessionIdRef.current = sessionId;
-        setIsNewConversation(false); // Reset the new conversation flag
-        console.log('New session created with ID:', sessionId);
-      } else {
-        // Add user message to the existing session
-        await addMessage(sessionId, 'user', inputText.trim());
-        console.log('User message added to session:', sessionId);
+      // Add message to the current session
+      if (sessionIdRef.current) {
+        await addMessage(sessionIdRef.current, 'user', newMessage.text);
+        console.log('User message added to session:', sessionIdRef.current);
       }
 
-      // Add user message to UI
-      const userMessage = {
-        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        text: inputText.trim(),
-        sender: 'user',
-      };
-
-      setMessages(prevMessages => [...prevMessages, userMessage]);
-      setInputText('');
-      setIsTyping(true);
-
-      // Send message through WebSocket with session ID
+      // Send message through WebSocket
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        console.log('Sending message through WebSocket:', inputText.trim());
         wsRef.current.send(JSON.stringify({
-          question: inputText.trim(),
-          session_id: sessionId
+          question: newMessage.text,
+          session_id: sessionIdRef.current
         }));
       } else {
         console.error('WebSocket is not connected');
-        // Add error message
-        const errorMessage = {
-          id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          text: 'Sorry, there was an error processing your message. Please try again.',
-          sender: 'ai',
-        };
-        setMessages(prevMessages => [...prevMessages, errorMessage]);
-        setIsTyping(false);
       }
     } catch (error) {
-      console.error('Error in handleSendMessage:', error);
-      setIsTyping(false);
-      showSnackbar('Failed to process message', 'error');
+      console.error('Error handling message:', error);
     }
   };
 
@@ -845,9 +1021,10 @@ const ChatBotScreen = () => {
     }
   };
 
-  // Update the renderMessage function to fix syntax and styling
+  // Update the renderMessage function
   const renderMessage = ({ item }) => {
     const isUser = item.sender === 'user';
+    const isStreaming = item.isStreaming;
     
     return (
       <View style={[
@@ -923,6 +1100,22 @@ const ChatBotScreen = () => {
               >
                 {item.text}
               </Markdown>
+              {isStreaming && (
+                <Animated.View
+                  style={[
+                    styles.cursor,
+                    {
+                      opacity: cursorAnimation,
+                      transform: [{
+                        translateX: cursorAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 2]
+                        })
+                      }]
+                    }
+                  ]}
+                />
+              )}
             </View>
           ) : (
             <Text 
@@ -940,116 +1133,8 @@ const ChatBotScreen = () => {
     );
   };
 
-  // Update the renderTypingIndicator to ensure text selection works
-  const renderTypingIndicator = () => {
-    if (!isTyping && !isStreaming) return null;
-
-    return (
-      <View style={[styles.messageRow, { justifyContent: 'flex-start' }]}> 
-        <View style={[
-          styles.messageBubble, 
-          { 
-            backgroundColor: themeColors.cardBg, 
-            borderBottomLeftRadius: 4,
-            borderBottomRightRadius: 20,
-            maxWidth: '100%',
-            paddingHorizontal: 8,
-            paddingVertical: 8
-          }
-        ]}> 
-          {currentTool ? (
-            <View style={styles.toolLoadingContainer}>
-              <Animated.View
-                style={[
-                  styles.shimmerContainer,
-                  {
-                    opacity: shimmerAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.5, 1],
-                    }),
-                  },
-                ]}
-              >
-                <Text 
-                  style={[
-                    styles.toolLoadingText,
-                    { 
-                      color: themeColors.text,
-                      userSelect: 'text',
-                      selectable: true
-                    }
-                  ]}
-                  selectable={true}
-                  textSelectable={true}
-                >
-                  Using {currentTool.replace(/_/g, ' ')}...
-                </Text>
-              </Animated.View>
-            </View>
-          ) : isStreaming ? (
-            <View style={styles.markdownContainer}>
-              <Markdown
-                style={{
-                  body: { 
-                    color: themeColors.text,
-                    fontSize: 16,
-                    lineHeight: 22,
-                    textAlign: 'left'
-                  },
-                  code_inline: { 
-                    backgroundColor: themeColors.searchBg,
-                    padding: 4,
-                    borderRadius: 4,
-                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
-                  },
-                  code_block: {
-                    backgroundColor: themeColors.searchBg,
-                    padding: 8,
-                    borderRadius: 4,
-                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
-                  },
-                  paragraph: {
-                    marginVertical: 4
-                  },
-                  link: {
-                    color: themeColors.primary,
-                    textDecorationLine: 'underline'
-                  },
-                  table: {
-                    borderWidth: 1,
-                    borderColor: themeColors.border
-                  },
-                  tr: {
-                    borderBottomWidth: 1,
-                    borderBottomColor: themeColors.border
-                  },
-                  th: {
-                    padding: 8,
-                    borderRightWidth: 1,
-                    borderRightColor: themeColors.border
-                  },
-                  td: {
-                    padding: 8,
-                    borderRightWidth: 1,
-                    borderRightColor: themeColors.border
-                  }
-                }}
-                onLinkPress={handleLinkPress}
-              >
-                {streamingText}
-              </Markdown>
-            </View>
-          ) : (
-            <View style={styles.typingDotsContainer}>
-              <View style={[styles.typingDot, { backgroundColor: themeColors.primary }]} />
-              <View style={[styles.typingDot, { backgroundColor: themeColors.primary, opacity: 0.7 }]} />
-              <View style={[styles.typingDot, { backgroundColor: themeColors.primary, opacity: 0.4 }]} />
-            </View>
-          )}
-        </View>
-      </View>
-    );
-  };
+  // Update the renderTypingIndicator function
+  const renderTypingIndicator = () => null;
 
   const handleSuggestionPress = (suggestion) => {
     setInputText(suggestion);
@@ -1140,24 +1225,38 @@ const ChatBotScreen = () => {
     }
   };
 
-  // Update renderSessionSources function to include attachments
+  // Update renderSessionSources function with optimized animation
   const renderSessionSources = () => {
-    if (sessionSources.length === 0) return null;
+    if (!sessionSources || sessionSources.length === 0) return null;
 
     return (
-      <View style={[
-        styles.sessionSourcesContainer,
-        { 
-          backgroundColor: themeColors.sourcesBg,
-          borderColor: themeColors.sourcesBorder,
-        }
-      ]}>
+      <Animated.View 
+        style={[
+          styles.sessionSourcesContainer,
+          { 
+            backgroundColor: themeColors.sourcesBg,
+            borderColor: themeColors.sourcesBorder,
+            opacity: sourcesAnimation,
+            transform: [{
+              translateY: sourcesAnimation.interpolate({
+                inputRange: [0, 1],
+                outputRange: [10, 0]
+              })
+            }]
+          }
+        ]}
+      >
         <TouchableOpacity 
           style={[
             styles.sessionSourcesHeader,
             { backgroundColor: themeColors.sourcesHeaderBg }
           ]}
-          onPress={() => setIsSourcesExpanded(!isSourcesExpanded)}
+          onPress={() => {
+            setIsSourcesExpanded(!isSourcesExpanded);
+            requestAnimationFrame(() => {
+              animateSources();
+            });
+          }}
         >
           <View style={styles.sessionSourcesTitleContainer}>
             <View style={[
@@ -1170,7 +1269,7 @@ const ChatBotScreen = () => {
               styles.sessionSourcesTitle,
               { color: themeColors.text }
             ]}>
-              Sources
+              Sources ({sessionSources.length})
             </Text>
           </View>
           <Icon 
@@ -1181,7 +1280,20 @@ const ChatBotScreen = () => {
         </TouchableOpacity>
         
         {isSourcesExpanded && (
-          <View style={styles.sourcesList}>
+          <Animated.View 
+            style={[
+              styles.sourcesList,
+              {
+                opacity: sourcesAnimation,
+                transform: [{
+                  translateY: sourcesAnimation.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [5, 0]
+                  })
+                }]
+              }
+            ]}
+          >
             {sessionSources.map((source, index) => (
               <View key={`source-${source.source}-${index}-${Math.random().toString(36).substr(2, 9)}`}>
                 <TouchableOpacity
@@ -1192,9 +1304,7 @@ const ChatBotScreen = () => {
                       borderColor: themeColors.sourcesBorder,
                     }
                   ]}
-                  onPress={() => {
-                    handleSourceClick(source);
-                  }}
+                  onPress={() => handleSourceClick(source)}
                 >
                   <View style={styles.sourceHeader}>
                     <Icon name="mail-outline" size={18} color={themeColors.primary} />
@@ -1234,13 +1344,13 @@ const ChatBotScreen = () => {
                 )}
               </View>
             ))}
-          </View>
+          </Animated.View>
         )}
-      </View>
+      </Animated.View>
     );
   };
 
-  // Add function to start new conversation
+  // Update the startNewConversation function
   const startNewConversation = async () => {
     try {
       // Clear the last session ID
@@ -1256,14 +1366,31 @@ const ChatBotScreen = () => {
     }
   };
 
-  // Add this useEffect after the existing useEffects
+  // Update the useEffect for session metadata
   useEffect(() => {
     const loadSessionMetadata = async () => {
       if (currentSessionId) {
         try {
           const metadata = await getSessionMetadata(currentSessionId);
           if (metadata && metadata.meta_data) {
-            setSessionSources([metadata.meta_data]);
+            // Handle both single metadata object and array of metadata
+            const sources = Array.isArray(metadata.meta_data) 
+              ? metadata.meta_data 
+              : [metadata.meta_data];
+            
+            setSessionSources(sources);
+            
+            // Initialize sources animation
+            sourcesAnimation.setValue(0);
+            Animated.spring(sourcesAnimation, {
+              toValue: 1,
+              useNativeDriver: true,
+              tension: ANIMATION_CONFIG.sources.tension,
+              friction: ANIMATION_CONFIG.sources.friction,
+              velocity: ANIMATION_CONFIG.sources.velocity,
+              restDisplacementThreshold: 0.01,
+              restSpeedThreshold: 0.01,
+            }).start();
           } else {
             setSessionSources([]);
           }
@@ -1275,7 +1402,7 @@ const ChatBotScreen = () => {
     };
 
     loadSessionMetadata();
-  }, [currentSessionId]); // This will run whenever currentSessionId changes
+  }, [currentSessionId]);
 
   // Move styles inside component
   const styles = StyleSheet.create({
@@ -1720,6 +1847,31 @@ const ChatBotScreen = () => {
       selectable: true,
       textSelectable: true
     },
+    cursor: {
+      width: 2,
+      height: 20,
+      backgroundColor: themeColors.primary,
+      marginLeft: 4,
+    },
+    messagesContainer: {
+      flexGrow: 1,
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      justifyContent: 'flex-end', // Ensure content starts from bottom
+    },
+    sourcesCard: {
+      backgroundColor: themeColors.cardBg,
+      borderRadius: 12,
+      padding: 16,
+      marginTop: 8,
+      marginBottom: 8,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      minHeight: 100, // Add minimum height to prevent empty appearance
+    },
   });
 
   // Add EmptyHistory component
@@ -1734,6 +1886,12 @@ const ChatBotScreen = () => {
       </Text>
     </View>
   );
+
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  const lastScrollY = useRef(0);
+  const contentHeight = useRef(0);
+  const scrollViewHeight = useRef(0);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDarkMode ? theme.background : BG_LIGHT }]}>
@@ -1911,7 +2069,6 @@ const ChatBotScreen = () => {
           </View>
         </View>
       ) : (
-        // Chat messages view
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : null}
           style={styles.keyboardAvoidView}
@@ -1922,13 +2079,24 @@ const ChatBotScreen = () => {
             ref={flatListRef}
             data={messages}
             renderItem={renderMessage}
-            keyExtractor={item => `msg-${item.id || Date.now()}-${Math.random().toString(36).substr(2, 9)}`}
-            contentContainerStyle={[styles.messagesList, { paddingBottom: BOTTOM_BAR_HEIGHT }]}
-            showsVerticalScrollIndicator={false}
-            ListFooterComponent={renderTypingIndicator}
-            onLayout={() => flatListRef.current?.scrollToEnd({animated: true})}
-            ListFooterComponentStyle={{paddingBottom: 16}}
+            keyExtractor={item => item.id || generateUniqueId()}
+            contentContainerStyle={[styles.messagesContainer, { paddingBottom: BOTTOM_BAR_HEIGHT }]}
+            onContentSizeChange={() => {
+              // Only auto-scroll if we're not streaming or if user hasn't manually scrolled
+              if (!isUserScrolling && (!messages[messages.length - 1]?.isStreaming || shouldAutoScroll)) {
+                flatListRef.current?.scrollToEnd({ animated: true });
+              }
+            }}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            scrollEnabled={true}
+            showsVerticalScrollIndicator={true}
             keyboardShouldPersistTaps="handled"
+            ListFooterComponent={renderTypingIndicator}
+            ListFooterComponentStyle={{paddingBottom: 16}}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            windowSize={10}
           />
         </KeyboardAvoidingView>
       )}

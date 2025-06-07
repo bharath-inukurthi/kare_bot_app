@@ -404,20 +404,30 @@ const IndexedScrollBar = ({ sections, onIndexPress, sortType, isDarkMode, sectio
   );
 };
 
-// Add module-level variables to persist data across screen navigation
+// Add module-level variables to persist data and loading state across screen navigation
 let globalCircularsData = [];
 let hasLoadedData = false;
+let isLoadingInBackground = false;
+let backgroundLoadingController = null;
+let lastLoadingProgress = 0;
+let shouldShowLoadingIndicator = false;
+let isProcessingData = false;
+let processingQueue = [];
+let loadingUpdateInterval = null;
+let initialLoadStarted = false; // Track if initial load has started
 
 const CircularsScreen = ({ navigation }) => {
   const [circulars, setCirculars] = useState([]);
   const [originalData, setOriginalData] = useState(globalCircularsData);
   const [loading, setLoading] = useState(!hasLoadedData);
   const [initialLoading, setInitialLoading] = useState(!hasLoadedData);
-  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingProgress, setLoadingProgress] = useState(lastLoadingProgress);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortType, setSortType] = useState('date');
   const [sortOrder, setSortOrder] = useState('desc');
   const [showFullScreenLoading, setShowFullScreenLoading] = useState(!hasLoadedData);
+  const [loadingItems, setLoadingItems] = useState(new Map());
+  const [showSideLoading, setShowSideLoading] = useState(shouldShowLoadingIndicator);
 
   // Animation value for loading indicator
   const loadingOpacity = useRef(new Animated.Value(1)).current;
@@ -430,6 +440,47 @@ const CircularsScreen = ({ navigation }) => {
   const dataByGroupRef = useRef({});
 
   const { isDarkMode, theme } = useTheme();
+
+  // Add refs to track component state
+  const loadingItemsRef = useRef(new Map());
+  const sectionListRef = useRef(null);
+
+  // Add refs for viewability config
+  const viewabilityConfigRef = useRef({
+    itemVisiblePercentThreshold: 30,
+    minimumViewTime: 100,
+  });
+  const viewabilityConfigCallbackPairsRef = useRef([]);
+  const isViewabilityConfigSet = useRef(false);
+
+  // Add effect to handle component lifecycle
+  useEffect(() => {
+    isMounted.current = true;
+
+    // Reset loading items when component mounts
+    loadingItemsRef.current = new Map();
+    setLoadingItems(new Map());
+
+    return () => {
+      isMounted.current = false;
+      // Clear any pending loading states
+      loadingItemsRef.current.clear();
+      setLoadingItems(new Map());
+    };
+  }, []);
+
+  // Add effect to handle navigation focus
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      // Reset loading states when screen comes into focus
+      if (isMounted.current) {
+        loadingItemsRef.current = new Map();
+        setLoadingItems(new Map());
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   // Helper function to parse date string in "month_name-year-day" format
   const parseDateString = (dateString) => {
@@ -469,151 +520,300 @@ const CircularsScreen = ({ navigation }) => {
     return parts.length >= 2 ? parseInt(parts[1]) : null;
   };
 
-  // Initialize data loading when component mounts
+  // Process data queue periodically
   useEffect(() => {
-    // Only fetch if we haven't loaded data yet
-    if (!hasLoadedData) {
-      fetchCirculars();
-    } else {
-      // If we already have data, just show it
-      setLoading(false);
-      setInitialLoading(false);
-      setShowFullScreenLoading(false);
-      // Process existing data
-      processAndSortCirculars(globalCircularsData);
-    }
+    let processingInterval;
+
+    const processQueue = () => {
+      if (isProcessingData || processingQueue.length === 0) return;
+      
+      isProcessingData = true;
+      try {
+        const data = processingQueue[processingQueue.length - 1];
+        processAndSortCirculars(data);
+        processingQueue.length = 0; // Clear queue after processing
+      } finally {
+        isProcessingData = false;
+      }
+    };
+
+    // Process queue every 100ms
+    processingInterval = setInterval(processQueue, 100);
 
     return () => {
-      isMounted.current = false;
-      if (fetchControllerRef.current) {
-        fetchControllerRef.current.abort();
-      }
+      clearInterval(processingInterval);
     };
   }, []);
 
-  const fetchCirculars = async () => {
-    // If we already have data and this isn't a manual refresh, don't fetch
-    if (hasLoadedData && !loading) {
-      return;
+  // Handle data updates
+  const updateData = useCallback((newData) => {
+    setOriginalData(newData);
+    processingQueue.push(newData); // Add to processing queue
+  }, []);
+
+  // Add effect to handle loading updates
+  useEffect(() => {
+    // Start interval for loading updates when component mounts
+    if (isLoadingInBackground) {
+      loadingUpdateInterval = setInterval(() => {
+        if (isLoadingInBackground) {
+          setLoadingProgress(lastLoadingProgress);
+          setShowSideLoading(shouldShowLoadingIndicator);
+        }
+      }, 100); // Update every 100ms
     }
 
+    return () => {
+      // Clear interval when component unmounts
+      if (loadingUpdateInterval) {
+        clearInterval(loadingUpdateInterval);
+        loadingUpdateInterval = null;
+      }
+    };
+  }, [isLoadingInBackground]);
+
+  // Add effect to handle initial loading
+  useEffect(() => {
+    if (!initialLoadStarted && !hasLoadedData) {
+      initialLoadStarted = true;
+      startBackgroundLoading();
+    }
+  }, []);
+
+  // Modify startBackgroundLoading to handle initial loading better
+  const startBackgroundLoading = async () => {
+    if (isLoadingInBackground && hasLoadedData) return;
+
+    // Clear any existing interval
+    if (loadingUpdateInterval) {
+      clearInterval(loadingUpdateInterval);
+      loadingUpdateInterval = null;
+    }
+
+    // Reset all states
+    isLoadingInBackground = true;
     setLoading(true);
     setInitialLoading(true);
     setShowFullScreenLoading(true);
+    setShowSideLoading(false);
     setLoadingProgress(0);
-    setOriginalData([]);
+    lastLoadingProgress = 0;
+    shouldShowLoadingIndicator = false;
     receivedCount.current = 0;
     dataByGroupRef.current = {};
+    processingQueue.length = 0;
 
+    // Force an immediate progress update
+    setLoadingProgress(0);
     loadingOpacity.setValue(1);
 
-    if (fetchControllerRef.current) {
-      fetchControllerRef.current.abort();
+    if (backgroundLoadingController) {
+      backgroundLoadingController.abort();
     }
 
     const controller = new AbortController();
-    fetchControllerRef.current = controller;
+    backgroundLoadingController = controller;
+
+    // Start loading update interval immediately
+    loadingUpdateInterval = setInterval(() => {
+      if (isLoadingInBackground) {
+        const currentProgress = receivedCount.current;
+        lastLoadingProgress = currentProgress;
+        setLoadingProgress(currentProgress);
+        
+        // Update loading indicator visibility
+        if (currentProgress >= 5) {
+          shouldShowLoadingIndicator = true;
+          setShowFullScreenLoading(false);
+          setShowSideLoading(true);
+          setInitialLoading(false);
+        }
+      }
+    }, 50); // Update more frequently for smoother progress
 
     const apiUrl = `https://faculty-availability-api.onrender.com/stream-circulars?t=${Date.now()}`;
 
-    const fetchWithRetry = async (retryCount = 0) => {
-      try {
-        const response = await fetch(apiUrl, {
-          headers: {
-            'Accept': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive'
-          },
-          signal: controller.signal
-        });
+    try {
+      const response = await fetch(apiUrl, {
+        headers: {
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        },
+        signal: controller.signal
+      });
 
-        if (!response.ok || !response.body) {
-          throw new Error(`HTTP error: ${response.status}`);
-        }
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP error: ${response.status}`);
+      }
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let buffer = '';
-        let allData = [];
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+      let allData = [];
 
-        while (true) {
-          const { done, value } = await reader.read();
+      while (true) {
+        const { done, value } = await reader.read();
 
-          if (done) {
-            // Stream has finished - update state and mark as loaded
-            if (isMounted.current) {
-              hasLoadedData = true;
-              globalCircularsData = allData;
-              setLoading(false);
-              setInitialLoading(false);
-              setShowFullScreenLoading(false);
-            }
-            break;
+        if (done) {
+          // Clear loading interval
+          if (loadingUpdateInterval) {
+            clearInterval(loadingUpdateInterval);
+            loadingUpdateInterval = null;
           }
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-
-          for (let i = 0; i < lines.length - 1; i++) {
-            const line = lines[i].trim();
-            if (line.startsWith('data:')) {
-              try {
-                const jsonStr = line.slice(5).trim();
-                const json = JSON.parse(jsonStr);
-                allData.push(json);
-                handleNewItem(json);
-              } catch (err) {
-                console.warn('Error parsing line:', line);
-              }
-            }
-          }
-
-          buffer = lines[lines.length - 1];
-        }
-      } catch (err) {
-        if (!controller.signal.aborted && isMounted.current) {
-          console.error('Fetch error:', err.message);
+          hasLoadedData = true;
+          globalCircularsData = allData;
+          isLoadingInBackground = false;
+          lastLoadingProgress = receivedCount.current;
+          shouldShowLoadingIndicator = false;
           
-          // Only show error alert if we haven't received any data
-          if (receivedCount.current === 0) {
-            Alert.alert('Fetch Failed', `${err.message}`, [
-              { text: 'Cancel', style: 'cancel' },
-              { 
-                text: 'Retry', 
-                onPress: () => {
-                  // Don't reset hasLoadedData here, just retry the fetch
-                  fetchWithRetry(retryCount + 1);
-                }
+          setLoading(false);
+          setInitialLoading(false);
+          setShowFullScreenLoading(false);
+          setShowSideLoading(false);
+          updateData(allData);
+          setLoadingProgress(receivedCount.current);
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+
+        for (let i = 0; i < lines.length - 1; i++) {
+          const line = lines[i].trim();
+          if (line.startsWith('data:')) {
+            try {
+              const jsonStr = line.slice(5).trim();
+              const json = JSON.parse(jsonStr);
+              allData.push(json);
+              
+              // Update progress immediately
+              receivedCount.current += 1;
+              const currentProgress = receivedCount.current;
+              lastLoadingProgress = currentProgress;
+              
+              // Update data and trigger processing
+              updateData([...allData]);
+
+              // Force progress update
+              setLoadingProgress(currentProgress);
+
+              if (currentProgress >= 5) {
+                shouldShowLoadingIndicator = true;
+                setShowFullScreenLoading(false);
+                setShowSideLoading(true);
+                setInitialLoading(false);
               }
-            ]);
-          } else {
-            // If we have some data, silently retry
-            fetchWithRetry(retryCount + 1);
+            } catch (err) {
+              console.warn('Error parsing line:', line);
+            }
           }
+        }
+
+        buffer = lines[lines.length - 1];
+      }
+    } catch (err) {
+      // Clear loading interval on error
+      if (loadingUpdateInterval) {
+        clearInterval(loadingUpdateInterval);
+        loadingUpdateInterval = null;
+      }
+
+      if (!controller.signal.aborted) {
+        console.error('Fetch error:', err.message);
+        isLoadingInBackground = false;
+        lastLoadingProgress = receivedCount.current;
+        shouldShowLoadingIndicator = receivedCount.current >= 5;
+        
+        setLoading(false);
+        setShowFullScreenLoading(false);
+        setShowSideLoading(shouldShowLoadingIndicator);
+        
+        if (receivedCount.current === 0) {
+          Alert.alert('Fetch Failed', `${err.message}`, [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Retry', 
+              onPress: () => {
+                initialLoadStarted = false; // Reset initial load flag
+                startBackgroundLoading();
+              }
+            }
+          ]);
         }
       }
-    };
-
-    // Start the fetch with retry mechanism
-    fetchWithRetry();
+    }
   };
 
-  // Memoize the processAndSortCirculars function to prevent unnecessary executions
-  const processAndSortCirculars = useCallback((data) => {
-    if (isProcessingRef.current) return;
-    isProcessingRef.current = true;
+  // Modify the cleanup in useEffect for screen focus/blur
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (isLoadingInBackground) {
+        setLoading(true);
+        setLoadingProgress(lastLoadingProgress);
+        
+        if (lastLoadingProgress < 5) {
+          setShowFullScreenLoading(true);
+          setShowSideLoading(false);
+          setInitialLoading(true);
+        } else {
+          setShowFullScreenLoading(false);
+          setShowSideLoading(true);
+          setInitialLoading(false);
+        }
 
-    try {
-      if (!data || !Array.isArray(data) || data.length === 0) {
-        setCirculars([]);
-        return;
+        // Start loading update interval if not already running
+        if (!loadingUpdateInterval) {
+          loadingUpdateInterval = setInterval(() => {
+            if (isLoadingInBackground) {
+              setLoadingProgress(lastLoadingProgress);
+              setShowSideLoading(shouldShowLoadingIndicator);
+            }
+          }, 100);
+        }
+
+        if (originalData.length > 0) {
+          processingQueue.push(originalData);
+        }
+      } else if (hasLoadedData) {
+        setLoading(false);
+        setShowFullScreenLoading(false);
+        setShowSideLoading(false);
+        setInitialLoading(false);
+        setLoadingProgress(lastLoadingProgress);
+        processingQueue.push(globalCircularsData);
+      } else {
+        startBackgroundLoading();
       }
+    });
 
-      // Filter based on search query
-      let filteredData = data;
+    return () => {
+      unsubscribe();
+      // Clear loading interval on unmount
+      if (loadingUpdateInterval) {
+        clearInterval(loadingUpdateInterval);
+        loadingUpdateInterval = null;
+      }
+    };
+  }, [navigation, originalData]);
+
+  // Memoize the processAndSortCirculars function
+  const processAndSortCirculars = useCallback((data) => {
+    if (!data || !Array.isArray(data) || data.length === 0) return;
+    
+    try {
+      const processedData = data.map(item => ({
+        ...item,
+        id: item.id || `circular-${item.filename}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        displayName: item.filename ? item.filename.split(':::')[1] || item.filename : 'Unnamed Document',
+        originalFilename: item.filename
+      }));
+
+      let filteredData = processedData;
       if (searchQuery) {
-        filteredData = data.filter(item =>
-          item.filename?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        filteredData = processedData.filter(item =>
+          item.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
           item.date?.toLowerCase().includes(searchQuery.toLowerCase())
         );
       }
@@ -681,17 +881,17 @@ const CircularsScreen = ({ navigation }) => {
       } else {
         // Sort and group by name
         const sortedData = [...filteredData].sort((a, b) => {
-          const nameA = a.filename?.toLowerCase() || '';
-          const nameB = b.filename?.toLowerCase() || '';
+          const nameA = a.displayName?.toLowerCase() || '';
+          const nameB = b.displayName?.toLowerCase() || '';
           return sortOrder === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
         });
 
         // Group by first letter
         const grouped = {};
         sortedData.forEach((item) => {
-          if (!item.filename) return;
+          if (!item.displayName) return;
 
-          const letter = item.filename[0].toUpperCase();
+          const letter = item.displayName[0].toUpperCase();
           if (!grouped[letter]) {
             grouped[letter] = {
               title: letter,
@@ -712,23 +912,10 @@ const CircularsScreen = ({ navigation }) => {
 
         setCirculars(result);
       }
-    } finally {
-      isProcessingRef.current = false;
+    } catch (error) {
+      console.error('Error processing data:', error);
     }
   }, [searchQuery, sortType, sortOrder]);
-
-  // Debounce the processing to prevent too frequent updates
-  const debouncedProcess = useCallback(
-    debounce((data) => {
-      processAndSortCirculars(data);
-    }, 300),
-    [processAndSortCirculars]
-  );
-
-  // Run processing whenever dependencies change
-  useEffect(() => {
-    debouncedProcess(originalData);
-  }, [originalData, searchQuery, sortType, sortOrder, debouncedProcess]);
 
   const handleNewItem = (data) => {
     try {
@@ -761,7 +948,10 @@ const CircularsScreen = ({ navigation }) => {
           duration: 300,
           useNativeDriver: true
         }).start(() => {
-          setShowFullScreenLoading(false);
+          if (isMounted.current) {
+            setShowFullScreenLoading(false);
+            setLoading(true); // Set loading to true to show side indicator
+          }
         });
       }
     } catch (error) {
@@ -781,58 +971,181 @@ const CircularsScreen = ({ navigation }) => {
   );
 
   const renderItem = useCallback(({ item, index, section }) => {
-    // Log every 20th item for debugging
-    if (index % 20 === 0) {
-      console.log(`Rendering item ${index} in section ${section.title}`);
-    }
+    // Ensure item has an ID
+    const itemId = item.id || `circular-${item.filename}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Memoize the press handler
+    const handlePress = useCallback(async () => {
+      if (!isMounted.current) return;
+      
+      console.log('Circular press handler called for:', item.displayName, 'with ID:', itemId);
+      
+      try {
+        // Validate item data
+        if (!item || !item.filename) {
+          console.warn('Invalid item data:', item);
+          Alert.alert(
+            'Error',
+            'This document is not available.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+
+        // Set loading state using ref to ensure we have latest state
+        console.log('Setting loading state for item:', itemId);
+        const newLoadingItems = new Map(loadingItemsRef.current);
+        newLoadingItems.set(itemId, true);
+        loadingItemsRef.current = newLoadingItems;
+        setLoadingItems(newLoadingItems);
+
+        // Construct and log the URL
+        const url = `https://faculty-availability-api.onrender.com/get-item/?object_key=Circulars/${encodeURIComponent(item.filename)}`;
+        console.log('Fetching from URL:', url);
+
+        // Make the request with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        try {
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+              'Cache-Control': 'no-cache'
+            },
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!isMounted.current) return;
+
+          if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          if (!isMounted.current) return;
+
+          if (!data || !data.presigned_url) {
+            throw new Error('Invalid response: No presigned URL');
+          }
+
+          // Check if we can open the URL
+          const canOpen = await Linking.canOpenURL(data.presigned_url);
+
+          if (!isMounted.current) return;
+
+          if (!canOpen) {
+            throw new Error('Cannot open this type of document');
+          }
+
+          // Open the URL with timeout
+          const openTimeout = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout opening URL')), 5000)
+          );
+          
+          const openPromise = Linking.openURL(data.presigned_url);
+          await Promise.race([openPromise, openTimeout]);
+          
+          if (!isMounted.current) return;
+          
+          console.log('Successfully opened document');
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            throw new Error('Request timed out');
+          }
+          throw error;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      } catch (error) {
+        if (!isMounted.current) return;
+        
+        let errorMessage = 'Failed to open document. Please try again later.';
+        
+        if (error.message.includes('Server error: 404')) {
+          errorMessage = 'This document is no longer available.';
+        } else if (error.message.includes('Server error: 500')) {
+          errorMessage = 'Server is temporarily unavailable. Please try again later.';
+        } else if (error.message.includes('Network request failed')) {
+          errorMessage = 'Please check your internet connection and try again.';
+        } else if (error.message.includes('Cannot open this type of document')) {
+          errorMessage = 'This document format is not supported on your device.';
+        } else if (error.message.includes('Invalid response')) {
+          errorMessage = 'Unable to get document URL. Please try again.';
+        } else if (error.message.includes('Timeout')) {
+          errorMessage = 'Request timed out. Please try again.';
+        }
+
+        Alert.alert(
+          'Error',
+          errorMessage,
+          [{ text: 'OK' }]
+        );
+      } finally {
+        if (!isMounted.current) return;
+        
+        // Clear loading state using ref
+        const newLoadingItems = new Map(loadingItemsRef.current);
+        newLoadingItems.delete(itemId);
+        loadingItemsRef.current = newLoadingItems;
+        setLoadingItems(newLoadingItems);
+      }
+    }, [item, itemId]);
+
+    const isLoading = loadingItemsRef.current.get(itemId);
 
     return (
       <TouchableOpacity
+        key={itemId}
         style={[
           styles.circularItem,
-          isDarkMode && styles.circularItemDark
+          isDarkMode && styles.circularItemDark,
+          isLoading && styles.circularItemLoading
         ]}
-        onPress={() => {
-          console.log(`Pressed item: ${item.filename}`);
-          if (item.url) {
-            Linking.openURL(item.url).catch((error) => {
-              console.error('Failed to open URL:', error);
-              Alert.alert('Failed to open link');
-            });
-          } else {
-            console.warn('No URL for item:', item.filename);
-          }
-        }}
+        onPress={handlePress}
+        disabled={isLoading}
+        activeOpacity={0.7}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       >
         <View style={styles.circularContent}>
           <Text
             style={[
               styles.circularTitle,
-              isDarkMode && styles.circularTitleDark
+              isDarkMode && styles.circularTitleDark,
+              isLoading && styles.circularTitleLoading
             ]}
             numberOfLines={1}
           >
-            {item.filename || 'Unnamed Document'}
+            {item.displayName || 'Unnamed Document'}
           </Text>
           <Text
             style={[
               styles.circularDate,
-              isDarkMode && styles.circularDateDark
+              isDarkMode && styles.circularDateDark,
+              isLoading && styles.circularDateLoading
             ]}
           >
             {item.date || 'Unknown Date'}
           </Text>
         </View>
         <View style={styles.tagContainer}>
-          <Ionicons
-            name="chevron-forward"
-            size={16}
-            color={isDarkMode ? '#4A4A4A' : '#DEDEDE'}
-          />
+          {isLoading ? (
+            <ActivityIndicator size="small" color="#19C6C1" />
+          ) : (
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={isDarkMode ? '#4A4A4A' : '#DEDEDE'}
+            />
+          )}
         </View>
       </TouchableOpacity>
     );
-  }, [isDarkMode]);
+  }, [isDarkMode, navigation]);
 
   const scrollToSection = useCallback((sectionTitle) => {
     console.log(`Attempting to scroll to section: ${sectionTitle}`);
@@ -923,9 +1236,6 @@ const CircularsScreen = ({ navigation }) => {
       }
     });
   }, []);
-
-  // Reference for SectionList
-  const sectionListRef = useRef(null);
 
   const renderEmptyList = () => (
     <View style={styles.emptyContainer}>
@@ -1092,7 +1402,7 @@ const CircularsScreen = ({ navigation }) => {
           sections={circulars}
           renderItem={renderItem}
           renderSectionHeader={renderSectionHeader}
-          keyExtractor={(item) => item.id || item.url || `circular-${item.filename}-${Math.random()}`}
+          keyExtractor={(item) => item.id || `circular-${item.filename}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`}
           contentContainerStyle={[styles.listContainer, { paddingBottom: 80 }]}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={!loading ? renderEmptyList : null}
@@ -1109,14 +1419,17 @@ const CircularsScreen = ({ navigation }) => {
           }}
           disableVirtualization={false}
           legacyImplementation={false}
+          extraData={loadingItemsRef.current}
         />
-        <IndexedScrollBar
-          sections={circulars}
-          onIndexPress={scrollToSection}
-          sortType={sortType}
-          isDarkMode={isDarkMode}
-          sectionListRef={sectionListRef}
-        />
+        {circulars.length > 0 && (
+          <IndexedScrollBar
+            sections={circulars}
+            onIndexPress={scrollToSection}
+            sortType={sortType}
+            isDarkMode={isDarkMode}
+            sectionListRef={sectionListRef}
+          />
+        )}
       </View>
 
       {showFullScreenLoading && (
@@ -1140,12 +1453,11 @@ const CircularsScreen = ({ navigation }) => {
                 ? `Loaded ${loadingProgress} items...`
                 : 'Connecting to server...'}
             </Text>
-            
           </View>
         </Animated.View>
       )}
 
-      {loading && !showFullScreenLoading && originalData.length > 0 && (
+      {showSideLoading && (
         <View style={[
           styles.streamingIndicator,
           { backgroundColor: isDarkMode ? theme.surface : '#fff' }
@@ -1163,11 +1475,7 @@ const CircularsScreen = ({ navigation }) => {
       {!loading && originalData.length > 0 && (
         <TouchableOpacity
           style={styles.refreshButton}
-          onPress={() => {
-            hasLoadedData = false; // Reset the flag to allow refresh
-            globalCircularsData = []; // Clear global data
-            fetchCirculars();
-          }}
+          onPress={startBackgroundLoading}
         >
           <Ionicons name="refresh" size={20} color="#fff" />
         </TouchableOpacity>
@@ -1422,7 +1730,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-
+  circularItemLoading: {
+    opacity: 0.7,
+  },
+  circularTitleLoading: {
+    opacity: 0.7,
+  },
+  circularDateLoading: {
+    opacity: 0.7,
+  },
 });
 
 // Add debounce utility function

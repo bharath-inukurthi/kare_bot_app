@@ -6,12 +6,12 @@ import {
   SafeAreaView,
   Image,
   ActivityIndicator,
-  Alert,
   TouchableOpacity,
   TextInput,
   Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Snackbar } from 'react-native-paper';
 
 // Define the color scheme consistent with the app
 const COLORS = {
@@ -31,25 +31,30 @@ const SignInScreen = ({
   createTestUser,
   debugMode,
   setDebugMode,
+  errorMessage,
+  setErrorMessage,
 }) => {
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const imageScale = useRef(new Animated.Value(0.8)).current;
 
-  const validateEmail = (email) => {
-    return email.endsWith('@klu.ac.in') || email === 'test.klu@gmail.com';
+  // Snackbar state
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+
+  const showSnackbar = (message) => {
+    setSnackbarMessage(message);
+    setSnackbarVisible(true);
   };
 
-  const handleGoogleSignInPress = () => {
-    // Show alert immediately if trying to sign in with non-KLU email
-    Alert.alert(
-      "Authentication Failed",
-      "Only @klu.ac.in email addresses or test.klu@gmail.com are allowed to sign in.",
-      [{ text: "OK" }]
-    );
-    return;
-  };
+  // Show error message when it changes
+  useEffect(() => {
+    if (errorMessage) {
+      showSnackbar(errorMessage);
+      setErrorMessage(''); // Clear the error message after showing
+    }
+  }, [errorMessage]);
 
   useEffect(() => {
     // Start animations when component mounts
@@ -119,7 +124,7 @@ const SignInScreen = ({
         >
           <TouchableOpacity
             style={styles.googleButton}
-            onPress={handleGoogleSignInPress}
+            onPress={handleGoogleSignIn}
             disabled={isLoading}
             activeOpacity={0.85}
           >
@@ -164,6 +169,27 @@ const SignInScreen = ({
           </Animated.View>
         )}
       </View>
+
+      {/* Snackbar */}
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
+        style={{
+          backgroundColor: '#EF4444',
+          margin: 16,
+          borderRadius: 8,
+        }}
+        action={{
+          label: 'Dismiss',
+          onPress: () => setSnackbarVisible(false),
+          textColor: '#FEE2E2'
+        }}
+      >
+        <Text style={{ color: '#FEE2E2' }}>
+          {snackbarMessage}
+        </Text>
+      </Snackbar>
     </SafeAreaView>
   );
 };

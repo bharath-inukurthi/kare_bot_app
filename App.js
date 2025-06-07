@@ -16,13 +16,11 @@ import {
 } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Provider as PaperProvider } from 'react-native-paper';
-import AlertDialog from './components/AlertDialog';
-// Firebase imports removed as we're now using Supabase
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
@@ -334,13 +332,8 @@ const App = () => {
   const [hasUserDetails, setHasUserDetails] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
   const animationRef = useRef(null);
-
-  // Alert dialog state
-  const [alertVisible, setAlertVisible] = useState(false);
-  const [alertTitle, setAlertTitle] = useState('');
-  const [alertMessage, setAlertMessage] = useState('');
-  const [alertConfirmAction, setAlertConfirmAction] = useState(() => {});
 
   // Animation values
   const scale = useSharedValue(1);
@@ -405,10 +398,7 @@ const App = () => {
           // Check if the email domain is klu.ac.in or our test email
           if (userEmail && !userEmail.endsWith('@klu.ac.in') && userEmail !== 'test.klu@gmail.com') {
             console.log('Email domain not allowed:', userEmail);
-            showAlert(
-              "Authentication Failed",
-              "Only @klu.ac.in email addresses or test.klu@gmail.com are allowed to sign in."
-            );
+            setErrorMessage('Only @klu.ac.in email addresses or test.klu@gmail.com are allowed to sign in.');
 
             // Sign out if not from the allowed domain
             await supabase.auth.signOut();
@@ -448,10 +438,7 @@ const App = () => {
         // Check if the email domain is klu.ac.in or our test email
         if (userEmail && !userEmail.endsWith('@klu.ac.in') && userEmail !== 'test.klu@gmail.com') {
           console.log('Email domain not allowed:', userEmail);
-          showAlert(
-            "Authentication Failed",
-            "Only @klu.ac.in email addresses are allowed to sign in."
-          );
+          setErrorMessage('Only @klu.ac.in email addresses are allowed to sign in.');
 
           // Sign out if not from the allowed domain
           await supabase.auth.signOut();
@@ -499,6 +486,9 @@ const App = () => {
     
     if (response.type !== 'success') {
       console.log('Google auth response type:', response.type);
+      if (response.type === 'error') {
+        setErrorMessage('Google sign-in was cancelled or failed');
+      }
       return;
     }
 
@@ -508,22 +498,7 @@ const App = () => {
         
         if (!response.params.id_token) {
           console.error('Error: No id_token received in response', response);
-          showAlert('Authentication Error', 'Failed to receive authentication token');
-          setIsLoading(false);
-          return;
-        }
-
-        // Decode the ID token to get user email
-        const decodedToken = await decode(response.params.id_token);
-        const userEmail = decodedToken.email;
-
-        // Validate email domain before proceeding
-        if (!userEmail.endsWith('@klu.ac.in') && userEmail !== 'test.klu@gmail.com') {
-          console.log('Email domain not allowed:', userEmail);
-          showAlert(
-            "Authentication Failed",
-            "Only @klu.ac.in email addresses or test.klu@gmail.com are allowed to sign in."
-          );
+          setErrorMessage('Failed to receive authentication token');
           setIsLoading(false);
           return;
         }
@@ -541,6 +516,19 @@ const App = () => {
 
         if (error) {
           throw error;
+        }
+
+        // Get user email from Supabase user data
+        const userEmail = data?.user?.email;
+
+        // Validate email domain
+        if (!userEmail || (!userEmail.endsWith('@klu.ac.in') && userEmail !== 'test.klu@gmail.com')) {
+          console.log('Email domain not allowed:', userEmail);
+          setErrorMessage('Only @klu.ac.in email addresses or test.klu@gmail.com are allowed to sign in.');
+          // Sign out the user if email domain is not allowed
+          await supabase.auth.signOut();
+          setIsLoading(false);
+          return;
         }
 
         // Store Supabase user ID as UUID
@@ -575,7 +563,7 @@ const App = () => {
           errorMessage = error.message;
         }
 
-        showAlert('Authentication Error', errorMessage);
+        setErrorMessage(errorMessage);
       } finally {
         setIsLoading(false);
       }
@@ -588,19 +576,13 @@ const App = () => {
   const handleEmailAuth = async (isSignUp = false) => {
     // Validate email domain
     if (!email.endsWith('@klu.ac.in') && email !== 'test.klu@gmail.com') {
-      showAlert(
-        "Authentication Failed",
-        "Only @klu.ac.in email addresses or test.klu@gmail.com are allowed to sign in."
-      );
+      setErrorMessage('Only @klu.ac.in email addresses or test.klu@gmail.com are allowed to sign in.');
       return;
     }
 
     // Validate password
     if (!password || password.length < 6) {
-      showAlert(
-        "Invalid Password",
-        "Password must be at least 6 characters long."
-      );
+      setErrorMessage('Password must be at least 6 characters long.');
       return;
     }
 
@@ -649,7 +631,7 @@ const App = () => {
         errorMessage = error.message;
       }
 
-      showAlert("Authentication Error", errorMessage);
+      setErrorMessage(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -694,10 +676,7 @@ const App = () => {
 
           console.log('Signed in with test user');
           setUser(signInData.user);
-          showAlert(
-            'Test User Signed In',
-            `Successfully signed in with test user:\nEmail: ${testEmail}\nPassword: ${testPassword}`
-          );
+          setErrorMessage('Successfully signed in with test user');
         } else {
           throw error;
         }
@@ -712,10 +691,7 @@ const App = () => {
 
         console.log('Test user created successfully');
         setUser(data.user);
-        showAlert(
-          'Test User Created',
-          `Email: ${testEmail}\nPassword: ${testPassword}\n\nYou can now sign in with these credentials.`
-        );
+        setErrorMessage('Test user created successfully');
       }
     } catch (error) {
       console.error('Test user error:', error);
@@ -725,7 +701,7 @@ const App = () => {
         errorMessage = error.message;
       }
 
-      showAlert("Test User Error", errorMessage);
+      setErrorMessage(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -759,135 +735,118 @@ const App = () => {
     return () => clearTimeout(animationTimer);
   }, []);
 
-  // Helper function to show alerts using React Native Paper
-  const showAlert = (title, message, confirmAction = () => {}) => {
-    setAlertTitle(title);
-    setAlertMessage(message);
-    setAlertConfirmAction(() => confirmAction);
-    setAlertVisible(true);
-  };
-
-  // Handle animation completion
-  const onAnimationFinish = () => {
-    console.log('Splash animation finished');
-
-    setTimeout(() => {
-      opacity.value = withTiming(0, { duration: 500 });
-      scale.value = withTiming(1.2, { duration: 500 });
-
-      setTimeout(() => {
-        setShowSplash(false);
-      }, 500);
-    }, 1000);
-  };
-
   if (showSplash) {
     return (
-      <View style={[styles.container, { backgroundColor: '#CFF6F5', justifyContent: 'center', alignItems: 'center' }]}>
-        <Animated.View
-          style={[
-            styles.splashContainer,
-            {
-              opacity: opacity,
-              transform: [
-                { scale: scale }
-              ],
-            }
-          ]}
-        >
-          <LottieView
-            ref={animationRef}
-            source={require('./assets/splash.json')}
-            style={styles.splashAnimation}
-            autoPlay={false}
-            loop={false}
-            speed={0.8}
-            onAnimationFinish={onAnimationFinish}
-            renderMode="HARDWARE"
-            cacheStrategy="strong"
-            hardwareAccelerationAndroidEnabled={true}
-            resizeMode="contain"
-          />
-        </Animated.View>
-      </View>
+      <SafeAreaProvider>
+        <View style={[styles.container, { backgroundColor: '#CFF6F5', justifyContent: 'center', alignItems: 'center' }]}>
+          <Animated.View
+            style={[
+              styles.splashContainer,
+              {
+                opacity: opacity,
+                transform: [
+                  { scale: scale }
+                ],
+              }
+            ]}
+          >
+            <LottieView
+              ref={animationRef}
+              source={require('./assets/splash.json')}
+              style={styles.splashAnimation}
+              autoPlay={false}
+              loop={false}
+              speed={0.8}
+              onAnimationFinish={() => {
+                console.log('Splash animation finished');
+                opacity.value = withTiming(0, { duration: 500 });
+                scale.value = withTiming(1.2, { duration: 500 });
+                setTimeout(() => {
+                  setShowSplash(false);
+                }, 500);
+              }}
+              renderMode="HARDWARE"
+              cacheStrategy="strong"
+              hardwareAccelerationAndroidEnabled={true}
+              resizeMode="contain"
+            />
+          </Animated.View>
+        </View>
+      </SafeAreaProvider>
     );
   }
 
   // Render user details screen if needed
   if (user && (showUserDetails || !hasUserDetails)) {
     return (
-      <UserDetailsScreen
-        onComplete={() => {
-          setShowUserDetails(false);
-          setHasUserDetails(true);
-        }}
-      />
+      <SafeAreaProvider>
+        <UserDetailsScreen
+          onComplete={() => {
+            setShowUserDetails(false);
+            setHasUserDetails(true);
+          }}
+        />
+      </SafeAreaProvider>
     );
   }
 
   // Render login screen if not authenticated
   if (!user) {
     return (
-      <SignInScreen
-        email={email}
-        setEmail={setEmail}
-        password={password}
-        setPassword={setPassword}
-        isLoading={isLoading}
-        handleEmailAuth={handleEmailAuth}
-        handleGoogleSignIn={() => {
-          setIsLoading(true);
-          console.log('Starting Google sign-in prompt');
-          
-          promptAsync({
-            useProxy: Platform.OS !== 'web' && __DEV__, // Use proxy in development
-            showInRecents: true,
-            responseType: Platform.OS === 'web' ? 'token' : 'id_token'
-          }).then(result => {
-            console.log('Google sign-in prompt result:', result);
-            if (result.type !== 'success') {
-              console.log('Google sign-in was not successful:', result.type);
-              setIsLoading(false);
-              if (result.type === 'error') {
-                showAlert('Authentication Error', 'Google sign-in was cancelled or failed');
+      <SafeAreaProvider>
+        <SignInScreen
+          email={email}
+          setEmail={setEmail}
+          password={password}
+          setPassword={setPassword}
+          isLoading={isLoading}
+          handleEmailAuth={handleEmailAuth}
+          handleGoogleSignIn={() => {
+            setIsLoading(true);
+            console.log('Starting Google sign-in prompt');
+            
+            promptAsync({
+              useProxy: Platform.OS !== 'web' && __DEV__, // Use proxy in development
+              showInRecents: true,
+              responseType: Platform.OS === 'web' ? 'token' : 'id_token'
+            }).then(result => {
+              console.log('Google sign-in prompt result:', result);
+              if (result.type !== 'success') {
+                console.log('Google sign-in was not successful:', result.type);
+                setIsLoading(false);
+                if (result.type === 'error') {
+                  setErrorMessage('Google sign-in was cancelled or failed');
+                }
               }
-            }
-          }).catch(error => {
-            console.error('Google sign-in error:', error);
-            setIsLoading(false);
-            showAlert('Authentication Error', 'Failed to initialize Google sign-in');
-          });
-        }}
-        createTestUser={createTestUser}
-        debugMode={debugMode}
-        setDebugMode={setDebugMode}
-      />
+            }).catch(error => {
+              console.error('Google sign-in error:', error);
+              setIsLoading(false);
+              setErrorMessage('Failed to initialize Google sign-in');
+            });
+          }}
+          createTestUser={createTestUser}
+          debugMode={debugMode}
+          setDebugMode={setDebugMode}
+          errorMessage={errorMessage}
+          setErrorMessage={setErrorMessage}
+        />
+      </SafeAreaProvider>
     );
   }
 
   // User is authenticated and has details, show the tab navigator
   return (
-    <PaperProvider>
-      <ThemeProvider>
-        <GestureHandlerRootView style={{ flex: 1 }}>
-          <NavigationContainer>
-            <MainStack />
-          </NavigationContainer>
-
-          {/* Alert Dialog */}
-          <AlertDialog
-            visible={alertVisible}
-            onDismiss={() => setAlertVisible(false)}
-            title={alertTitle}
-            message={alertMessage}
-            onConfirm={() => {
-              setAlertVisible(false);
-              alertConfirmAction();
-            }}
-          />
-        </GestureHandlerRootView>
-      </ThemeProvider>
-    </PaperProvider>
+    <SafeAreaProvider>
+      <PaperProvider>
+        <ThemeProvider>
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <NavigationContainer>
+              <MainStack />
+            </NavigationContainer>
+          </GestureHandlerRootView>
+        </ThemeProvider>
+      </PaperProvider>
+    </SafeAreaProvider>
   );
 };
 
